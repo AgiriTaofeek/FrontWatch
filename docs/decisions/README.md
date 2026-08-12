@@ -21,6 +21,8 @@
 | [015](ADR-015-kubernetes-production.md) | Kubernetes for enterprise deployment | Accepted as production target |
 | [016](ADR-016-go-data-plane.md) | Go for the data plane | Accepted, amended by 017 |
 | [017](ADR-017-control-plane-bun.md) | TypeScript/Bun for the control plane | Accepted, amends 016 |
+| [018](ADR-018-elysia-control-plane-router.md) | Elysia as the control-plane HTTP router | Accepted |
+| [019](ADR-019-biome-ts-tooling.md) | Biome for TypeScript linting & formatting | Accepted |
 
 ## Genuinely still open (not yet an ADR)
 
