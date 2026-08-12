@@ -14,8 +14,12 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done
 - [x] `.gitignore` covers Go build artifacts (`bin/`, `*.test`, `*.out`)
 - [x] Local infra verified healthy (`infra/local/docker-compose.yml` — Postgres, ClickHouse, Redpanda)
 - [x] Initial commits pushed to `github.com/AgiriTaofeek/FrontWatch`, default branch `main`
+- [x] CI (`.github/workflows/ci.yml`): Biome check + Go build/lint on push and PR
+- [x] Branch protection on `main`: PR required (0 reviewers, solo project), CI must pass, no force-push/delete, applies to admins too
 
-**Done:** 2026-08-12
+**Done:** 2026-08-12 — this fully closes M0's "CI" exit criterion, which had been marked done prematurely in the previous entry.
+
+**Workflow from here on:** branch → PR → CI green → self-merge. Direct pushes to `main` are no longer possible (protection is enforced, including for the repo owner).
 
 ---
 
