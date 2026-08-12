@@ -29,14 +29,22 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done
 - [x] TS/Bun lint + format: **Biome**, replacing ESLint+Prettier — [ADR-019](docs/decisions/ADR-019-biome-ts-tooling.md)
 - [x] Go lint: `golangci-lint` (unchanged, decided independently)
 - [x] Auth library decision **deferred to Step 9** — do not pull in better-auth or wire up Keycloak/OIDC during Step 2; `tech-stack.md` already names OIDC/Keycloak as the documented direction, revisit deliberately (possible ADR) if that changes
-- [ ] Actually install/configure Biome + golangci-lint in the repo (still to do)
+- [x] Biome + golangci-lint installed and verified working (`biome check .` clean, `golangci-lint run ./...` clean)
+- [x] Elysia installed in `apps/control-api`, `@types/bun`, shared `packages/config/tsconfig.base.json`
+- [x] CI workflow + branch protection on `main` (recorded under Step 1 above — CI applies repo-wide, not control-plane-specific)
+- [x] Husky + commitlint (`commit-msg`, enforcing Conventional Commits) + lint-staged (`pre-commit`: Biome on staged TS/JSON, `go build`+`golangci-lint --new-from-rev` on staged Go)
+
+**Done:** 2026-08-12
 
 ---
 
 ## Step 2 — Control plane *(minimal — project identity only, no auth/RBAC yet)*
 
+- [x] DB tooling decided: **Drizzle ORM, `bun-sql` driver** — [ADR-020](docs/decisions/ADR-020-drizzle-bun-sql.md)
+- [ ] `drizzle.config.ts` + schema file in `apps/control-api`
 - [ ] `projects` table (Postgres) — FKs to `application_id`/`environment_id` left **nullable for now** (real model in `data-model.md` §1 requires them; full `Application`/`Environment` tables deferred, tracked shortcut not silent scope creep)
-- [ ] A way to create a project and read back its ID (migration + seed, or a first minimal Elysia endpoint)
+- [ ] First migration generated + applied against local Postgres (`infra/local/docker-compose.yml`)
+- [ ] A way to create a project and read back its ID (first minimal Elysia endpoint)
 - [ ] Tests written alongside this code, not deferred — per `docs/07-delivery/test-strategy.md`'s pyramid (unit first)
 
 **Why here:** the SDK's `init()` and every telemetry event need a real `project_id`, not a placeholder — see the reasoning captured in conversation on 2026-08-12.

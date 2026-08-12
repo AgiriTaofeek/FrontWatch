@@ -6,6 +6,6 @@
 		"strict": true,
 		"skipLibCheck": true,
 		"esModuleInterop": true,
-		"types": ["bun-types"]
+		"types": ["bun"]
 	}
 }
