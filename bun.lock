@@ -1,0 +1,38 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {},
+    "apps/control-api": {
+      "name": "@frontwatch/control-api",
+    },
+    "apps/web": {
+      "name": "@frontwatch/web",
+    },
+    "packages/config": {
+      "name": "@frontwatch/config",
+    },
+    "packages/contracts": {
+      "name": "@frontwatch/contracts",
+    },
+    "packages/sdk": {
+      "name": "@frontwatch/sdk",
+    },
+    "packages/ui": {
+      "name": "@frontwatch/ui",
+    },
+  },
+  "packages": {
+    "@frontwatch/config": ["@frontwatch/config@workspace:packages/config"],
+
+    "@frontwatch/contracts": ["@frontwatch/contracts@workspace:packages/contracts"],
+
+    "@frontwatch/control-api": ["@frontwatch/control-api@workspace:apps/control-api"],
+
+    "@frontwatch/sdk": ["@frontwatch/sdk@workspace:packages/sdk"],
+
+    "@frontwatch/ui": ["@frontwatch/ui@workspace:packages/ui"],
+
+    "@frontwatch/web": ["@frontwatch/web@workspace:apps/web"],
+  }
+}
