@@ -23,6 +23,8 @@
 | [017](ADR-017-control-plane-bun.md) | TypeScript/Bun for the control plane | Accepted, amends 016 |
 | [018](ADR-018-elysia-control-plane-router.md) | Elysia as the control-plane HTTP router | Accepted |
 | [019](ADR-019-biome-ts-tooling.md) | Biome for TypeScript linting & formatting | Accepted |
+| [020](ADR-020-drizzle-bun-sql.md) | Drizzle ORM (bun-sql driver) for the control plane | Accepted |
+| [021](ADR-021-uuid-primary-keys.md) | UUID primary keys for control-plane entities | Accepted |
 
 ## Genuinely still open (not yet an ADR)
 
