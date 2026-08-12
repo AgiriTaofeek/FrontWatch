@@ -12,6 +12,22 @@ jobs:
   ts:
     name: TypeScript / Bun
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: frontwatch
+          POSTGRES_PASSWORD: frontwatch_dev
+          POSTGRES_DB: frontwatch
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U frontwatch"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://frontwatch:frontwatch_dev@localhost:5432/frontwatch
     steps:
       - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
@@ -21,6 +37,11 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Biome (lint + format check)
         run: bunx --bun @biomejs/biome ci .
+      - name: Run DB migrations
+        working-directory: apps/control-api
+        run: bunx drizzle-kit migrate
+      - name: Run tests
+        run: bun test
 
   go:
     name: Go data-plane
