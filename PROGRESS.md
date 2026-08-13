@@ -55,14 +55,20 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done
 
 ---
 
-## Step 3 — SDK skeleton
+## Step 3 — SDK skeleton ✅
 
-- [ ] `init()` — config validation, client creation
-- [ ] Context (release, environment, route, session, browser, device)
-- [ ] Event envelope creation
-- [ ] Buffer (bounded, FIFO)
-- [ ] Transport skeleton (batching shape — doesn't need to send anywhere real yet)
-- [ ] Privacy stub (even a no-op pass-through, to keep the pipeline order correct later)
+- [x] `init()` — config validation (never crashes on bad config, disables itself instead), dedup behavior, client creation (`client.ts`)
+- [x] Context (release, environment, route, sessionId, userAgent — minimal, no UA parsing yet) (`context.ts`)
+- [x] Event envelope creation — SDK-side shape only, no tenant IDs (those get resolved server-side at ingestion, per data-model.md §10) (`event.ts`)
+- [x] Buffer (bounded, FIFO, count-based only — no byte-size bound or shutdown-flush yet) (`buffer.ts`)
+- [x] Transport skeleton — batching, bounded exponential backoff, retries only 5xx/network failures not 4xx (`transport.ts`)
+- [x] Privacy stub — no-op, but structurally present in the pipeline per ADR-007 (`privacy.ts`)
+- [x] First real instrumentation: `errors.ts` — `window.addEventListener('error'/'unhandledrejection')`, thin wrapper over `captureException`
+- [x] Tests: 11 passing (buffer, transport retry/backoff with mocked fetch, error-instrumentation with `happy-dom`)
+
+**Done:** 2026-08-13. **Real finding:** a root-level `bun test` does not reliably apply a nested package's `bunfig.toml` (confirmed empirically — `happy-dom` never registered, `window is not defined`) — each package's tests must run scoped to that package, both locally and in CI. Fixed `ci.yml` accordingly (separate `apps/control-api` and `packages/sdk` test steps).
+
+**Deferred, not forgotten:** resource-loading-failure capture, `captureMessage`/`addBreadcrumb`/`setUser`/`flush`/`close`, sampling, real UA parsing, byte-bounded buffer, shutdown flush, framework adapters.
 
 ---
 
