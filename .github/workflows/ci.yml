@@ -100,14 +100,35 @@ jobs:
         working-directory: apps/control-api
         run: bunx drizzle-kit migrate
       # GitHub Actions' `services:` block can't override a container's
-      # startup command, and Redpanda needs specific flags to run at
-      # all — hence the official action instead of a services: entry
-      # (same reasoning that led to this codebase's local
-      # docker-compose dual-listener fix, discovered while building
-      # this exact test).
+      # startup command, which Redpanda needs — tried the official
+      # redpanda-data/github-action first, but it's broken: its
+      # entrypoint is hardcoded to the `vectorized/redpanda` image,
+      # which no longer exists under that name on Docker Hub (Redpanda
+      # renamed to `redpandadata/redpanda` — the name our own
+      # infra/local/docker-compose.yml already correctly uses). No
+      # version input fixes this since the base image name itself is
+      # wrong. Running the same known-working image directly instead.
+      # Single listener is enough here (unlike local docker-compose) —
+      # nothing else needs to reach it except this job's own steps.
       - name: Start Redpanda
-        uses: redpanda-data/github-action@v0.1.4
-        with:
-          version: "latest"
+        run: |
+          docker run -d --name redpanda \
+            -p 9092:9092 -p 9644:9644 \
+            redpandadata/redpanda:v24.2.7 \
+            redpanda start --mode=dev-container --smp=1 --memory=1G --overprovisioned --node-id=0 \
+            --kafka-addr=internal://0.0.0.0:9092 \
+            --advertise-kafka-addr=internal://localhost:9092
+      - name: Wait for Redpanda
+        run: |
+          for i in $(seq 1 30); do
+            if docker exec redpanda rpk cluster health 2>/dev/null | grep -q 'Healthy:.*true'; then
+              echo "Redpanda healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Redpanda did not become healthy in time" >&2
+          docker logs redpanda
+          exit 1
       - name: Test
         run: go test ./...
