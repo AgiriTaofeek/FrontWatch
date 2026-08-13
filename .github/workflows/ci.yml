@@ -40,7 +40,15 @@ jobs:
       - name: Run DB migrations
         working-directory: apps/control-api
         run: bunx drizzle-kit migrate
-      - name: Run tests
+      - name: Run control-api tests
+        working-directory: apps/control-api
+        run: bun test
+      - name: Run sdk tests
+        # Scoped deliberately — a single root-level `bun test` does not
+        # reliably apply a nested package's bunfig.toml (confirmed
+        # locally: happy-dom's window never registers when run from
+        # root). Each package's tests run from inside that package.
+        working-directory: packages/sdk
         run: bun test
 
   go:

@@ -1,3 +1,9 @@
 {
-	"name": "@frontwatch/sdk"
+	"name": "@frontwatch/sdk",
+	"scripts": {
+		"test": "bun test"
+	},
+	"devDependencies": {
+		"@happy-dom/global-registrator": "20.0.10"
+	}
 }
