@@ -54,6 +54,22 @@ jobs:
   go:
     name: Go data-plane
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: frontwatch
+          POSTGRES_PASSWORD: frontwatch_dev
+          POSTGRES_DB: frontwatch
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U frontwatch"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://frontwatch:frontwatch_dev@localhost:5432/frontwatch
     defaults:
       run:
         working-directory: services/data-plane
@@ -69,3 +85,18 @@ jobs:
         with:
           version: v2.12
           working-directory: services/data-plane
+      # Go's Postgres integration tests (internal/storage/postgres) need
+      # the real schema Bun/Drizzle owns and migrates - not a schema Go
+      # controls itself (ADR-022: Go only ever reads this table). Bun
+      # is set up here purely to run that one migration step.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.9"
+      - name: Install control-api dependencies
+        working-directory: apps/control-api
+        run: bun install --frozen-lockfile
+      - name: Run DB migrations
+        working-directory: apps/control-api
+        run: bunx drizzle-kit migrate
+      - name: Test
+        run: go test ./...
