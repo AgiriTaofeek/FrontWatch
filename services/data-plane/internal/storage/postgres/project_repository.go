@@ -53,3 +53,15 @@ func (r *ProjectCredentialRepository) FindActiveByPublicKey(ctx context.Context,
 
 	return p, nil
 }
+
+// ValidateCredential adapts FindActiveByPublicKey to the shape
+// internal/telemetry.CredentialValidator expects — this package never
+// imports telemetry (no reason to), it just happens to structurally
+// satisfy the interface telemetry defines on its own side.
+func (r *ProjectCredentialRepository) ValidateCredential(ctx context.Context, publicKey string) (string, error) {
+	project, err := r.FindActiveByPublicKey(ctx, publicKey)
+	if err != nil {
+		return "", err
+	}
+	return project.ID, nil
+}
