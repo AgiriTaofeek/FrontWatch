@@ -79,7 +79,9 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done
 - [x] Fixed a real drift: SDK's `transport.ts` was sending an invented shape (camelCase, no batch envelope, made-up `X-Frontwatch-Key` header) that didn't match the documented wire contract at all — now serializes via `packages/sdk/src/serialize.ts` → `@frontwatch/contracts`, standard `Authorization: Bearer <publicKey>`, `POST /ingest/v1/events`
 - [x] Contract test: `serialize.test.ts` asserts the serializer's output against the spec-derived fixture directly, not just "it compiles"
 - [x] Validate incoming payload against the versioned event contract (Go side) — `internal/telemetry`, pure domain layer, zero infra imports per code-structure.md's strict dependency direction. 7 table-driven tests passing, `golangci-lint` clean
-- [ ] Auth against project key (Go side — `pgx`, per ADR-022)
+- [x] `internal/platform/config` — typed startup config, exits clearly on missing `DATABASE_URL`/`REDPANDA_BROKERS` rather than starting partially-configured. Real finding: a test passed locally only because my shell had `DATABASE_URL` exported from a prior command — `t.Setenv` doesn't clear vars it wasn't told about — fixed by explicitly clearing it per-subtest instead of relying on ambient absence
+- [x] Auth against project key (Go side) — `internal/storage/postgres`, one narrow `ProjectCredentialRepository.FindActiveByPublicKey`, `pgx` v5.10.0, per ADR-022. Disabled and nonexistent keys deliberately return the same error (no signal leaked either way). Integration-tested against real local Postgres (insert/query/cleanup), skips cleanly if `DATABASE_URL` unset
+- [x] Real gap caught and fixed: `ci.yml`'s Go job only ever ran `go build` + `golangci-lint` — `go test` never ran in CI, so the Postgres integration test above would have passed locally forever and never actually run where it matters. Added a `postgres:16` service + Bun/drizzle-kit migration step to the Go job too (Go's tests need the real schema Bun owns)
 - [ ] Publish to Redpanda (`franz-go`)
 - [ ] Wire it into `cmd/ingestion/main.go` for real
 
