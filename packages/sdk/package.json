@@ -3,6 +3,9 @@
 	"scripts": {
 		"test": "bun test"
 	},
+	"dependencies": {
+		"@frontwatch/contracts": "workspace:*"
+	},
 	"devDependencies": {
 		"@happy-dom/global-registrator": "20.0.10"
 	}

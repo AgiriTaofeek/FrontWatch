@@ -1,4 +1,5 @@
 import type { FrontwatchEvent } from "./event";
+import { toIngestRequest } from "./serialize";
 
 // Batches events into one request, retries only failures likely to
 // succeed later (5xx / network errors), bounded exponential backoff,
@@ -9,10 +10,14 @@ import type { FrontwatchEvent } from "./event";
 // not needed for correctness, only for request size, revisit once
 // there's real payload volume to measure against.
 //
-// Deliberately fine to build this against a target that doesn't exist
-// yet (ingestion is Step 4) — failure handling *is* transport's job
-// regardless of whether the endpoint is real; it'll just always take
-// the retryable-failure path until Step 4 gives it somewhere to land.
+// `endpoint` is the ingestion host, not the full URL — POST /ingest/v1/
+// events is the documented path (api-contracts.md §3), the SDK knows
+// it so callers don't have to type it.
+//
+// Auth: Authorization: Bearer <publicKey> — api-contracts.md never
+// mandates a specific header, so the standard HTTP convention wins
+// over an invented custom one (works with plain `curl -H`, no
+// custom-header documentation needed).
 
 export interface TransportOptions {
 	endpoint: string;
@@ -42,15 +47,18 @@ export class Transport {
 			return;
 		}
 
+		const url = new URL("/ingest/v1/events", this.endpoint);
+		const body = JSON.stringify(toIngestRequest(events));
+
 		for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
 			try {
-				const response = await fetch(this.endpoint, {
+				const response = await fetch(url, {
 					method: "POST",
 					headers: {
 						"Content-Type": "application/json",
-						"X-Frontwatch-Key": this.publicKey,
+						Authorization: `Bearer ${this.publicKey}`,
 					},
-					body: JSON.stringify({ events }),
+					body,
 				});
 
 				if (response.ok || response.status < 500) {
