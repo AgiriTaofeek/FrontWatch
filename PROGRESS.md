@@ -41,11 +41,15 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done
 ## Step 2 — Control plane *(minimal — project identity only, no auth/RBAC yet)*
 
 - [x] DB tooling decided: **Drizzle ORM, `bun-sql` driver** — [ADR-020](docs/decisions/ADR-020-drizzle-bun-sql.md)
-- [ ] `drizzle.config.ts` + schema file in `apps/control-api`
-- [ ] `projects` table (Postgres) — FKs to `application_id`/`environment_id` left **nullable for now** (real model in `data-model.md` §1 requires them; full `Application`/`Environment` tables deferred, tracked shortcut not silent scope creep)
-- [ ] First migration generated + applied against local Postgres (`infra/local/docker-compose.yml`)
-- [ ] A way to create a project and read back its ID (first minimal Elysia endpoint)
-- [ ] Tests written alongside this code, not deferred — per `docs/07-delivery/test-strategy.md`'s pyramid (unit first)
+- [x] UUID primary keys decided — [ADR-021](docs/decisions/ADR-021-uuid-primary-keys.md)
+- [x] `drizzle.config.ts` + schema file in `apps/control-api` (`src/db/schema.ts`)
+- [x] `projects` table (Postgres) — FKs to `application_id`/`environment_id` left **nullable for now** (real model in `data-model.md` §1 requires them; full `Application`/`Environment` tables deferred, tracked shortcut not silent scope creep)
+- [x] First migration generated + applied against local Postgres (`infra/local/docker-compose.yml`), verified via `psql`
+- [x] A way to create a project and read back its ID — `POST /projects` + `GET /projects/:id` (`apps/control-api/src/routes/projects.ts`)
+- [x] Tests written alongside this code — `projects.test.ts`, integration-layer (real local Postgres), CI runs them against a `postgres:16` service container
+- [x] `apps/control-api/src/index.ts` — app entry point mounting the route
+
+**Done:** 2026-08-12 — closes Step 2. No auth/RBAC yet (still correctly deferred to Step 9).
 
 **Why here:** the SDK's `init()` and every telemetry event need a real `project_id`, not a placeholder — see the reasoning captured in conversation on 2026-08-12.
 
