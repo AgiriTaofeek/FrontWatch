@@ -1,0 +1,19 @@
+{
+	"schema_version": 1,
+	"sent_at": "2026-08-11T14:30:00Z",
+	"events": [
+		{
+			"event_id": "evt_123",
+			"event_type": "error",
+			"timestamp": "2026-08-11T14:29:59.123Z",
+			"release": "2026.08.11",
+			"session_id": "sess_123",
+			"route": "/dashboard",
+			"payload": {
+				"message": "Cannot read properties of undefined",
+				"exception_type": "TypeError",
+				"handled": false
+			}
+		}
+	]
+}

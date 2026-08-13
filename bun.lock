@@ -34,6 +34,9 @@
     },
     "packages/sdk": {
       "name": "@frontwatch/sdk",
+      "dependencies": {
+        "@frontwatch/contracts": "workspace:*",
+      },
       "devDependencies": {
         "@happy-dom/global-registrator": "20.0.10",
       },

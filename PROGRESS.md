@@ -74,9 +74,13 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done
 
 ## Step 4 — Ingestion
 
-- [ ] Auth against project key
-- [ ] Validate incoming payload against the versioned event contract
-- [ ] Publish to Redpanda
+- [x] ADR-022: Go ingestion reads Postgres directly (read-only), resolving code-structure.md's explicitly-flagged open question
+- [x] `packages/contracts`: wire types matching `api-contracts.md` §3-4 exactly (`WireEvent`, `IngestRequest`, `IngestResponse`), plus a fixture lifted straight from the doc's own example
+- [x] Fixed a real drift: SDK's `transport.ts` was sending an invented shape (camelCase, no batch envelope, made-up `X-Frontwatch-Key` header) that didn't match the documented wire contract at all — now serializes via `packages/sdk/src/serialize.ts` → `@frontwatch/contracts`, standard `Authorization: Bearer <publicKey>`, `POST /ingest/v1/events`
+- [x] Contract test: `serialize.test.ts` asserts the serializer's output against the spec-derived fixture directly, not just "it compiles"
+- [ ] Auth against project key (Go side — `pgx`, per ADR-022)
+- [ ] Validate incoming payload against the versioned event contract (Go side)
+- [ ] Publish to Redpanda (`franz-go`)
 
 ---
 

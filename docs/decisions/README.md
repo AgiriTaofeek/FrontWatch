@@ -25,6 +25,7 @@
 | [019](ADR-019-biome-ts-tooling.md) | Biome for TypeScript linting & formatting | Accepted |
 | [020](ADR-020-drizzle-bun-sql.md) | Drizzle ORM (bun-sql driver) for the control plane | Accepted |
 | [021](ADR-021-uuid-primary-keys.md) | UUID primary keys for control-plane entities | Accepted |
+| [022](ADR-022-ingestion-postgres-access.md) | Go ingestion reads Postgres directly (read-only) | Accepted — resolves an explicitly open question in code-structure.md |
 
 ## Genuinely still open (not yet an ADR)
 
