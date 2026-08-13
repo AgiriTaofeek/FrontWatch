@@ -38,10 +38,22 @@ services:
       - --memory=1G
       - --overprovisioned
       - --node-id=0
-      - --kafka-addr=internal://0.0.0.0:9092
-      - --advertise-kafka-addr=internal://redpanda:9092
+      # Dual listeners: "internal" for other containers on this Docker
+      # network (advertised as the service name, resolvable only inside
+      # the network), "external" for the host machine (advertised as
+      # localhost, on a different port — Redpanda requires distinct
+      # ports per listener). Without "external", any client running on
+      # the host (e.g. `go run`, `go test`) can complete the initial
+      # bootstrap connection against localhost:9092, but then hangs
+      # trying to reach the *advertised* address for the actual
+      # produce/consume — "redpanda:9092" doesn't resolve outside the
+      # Docker network. Confirmed by hitting exactly that hang while
+      # building the Go ingestion service's Redpanda publisher.
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr=internal://redpanda:9092,external://localhost:19092
     ports:
       - "9092:9092"
+      - "19092:19092"
       - "9644:9644" # admin API
     healthcheck:
       test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]

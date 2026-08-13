@@ -70,6 +70,7 @@ jobs:
           --health-retries 5
     env:
       DATABASE_URL: postgres://frontwatch:frontwatch_dev@localhost:5432/frontwatch
+      REDPANDA_BROKERS: localhost:9092
     defaults:
       run:
         working-directory: services/data-plane
@@ -98,5 +99,15 @@ jobs:
       - name: Run DB migrations
         working-directory: apps/control-api
         run: bunx drizzle-kit migrate
+      # GitHub Actions' `services:` block can't override a container's
+      # startup command, and Redpanda needs specific flags to run at
+      # all — hence the official action instead of a services: entry
+      # (same reasoning that led to this codebase's local
+      # docker-compose dual-listener fix, discovered while building
+      # this exact test).
+      - name: Start Redpanda
+        uses: redpanda-data/github-action@v0.1.4
+        with:
+          version: "latest"
       - name: Test
         run: go test ./...
