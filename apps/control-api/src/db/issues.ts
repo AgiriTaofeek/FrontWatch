@@ -3,7 +3,7 @@ import type {
 	IssueSummary,
 	OccurrenceSummary,
 } from "@frontwatch/contracts";
-import { clickhouse } from "./clickhouse";
+import { clickhouse, toClickHouseDateTime64 } from "./clickhouse";
 
 // ADR-023: issues are derived by GROUP BY over the events table (Go's
 // worker writes there, Step 5) — no separate materialized table. The
@@ -182,6 +182,33 @@ export async function getIssue(
 	}));
 
 	return { ...toSummary(projectId, summary), recentOccurrences };
+}
+
+// Step 8's alert-evaluator: "genuinely new" means first_seen_at is on
+// or after `since` (a rule's own createdAt) — a rule created against a
+// project with pre-existing issues must not fire for all of them at
+// once just because they've never been alerted-on before. Reuses
+// ISSUE_SUMMARY_SELECT/toSummary rather than a separate query shape,
+// since a "new issue" is exactly an IssueSummary, just filtered
+// differently than listIssues' paginated dashboard view.
+export async function listNewIssues(
+	projectId: string,
+	since: Date,
+): Promise<IssueSummary[]> {
+	const result = await clickhouse.query({
+		query: `
+			SELECT ${ISSUE_SUMMARY_SELECT}
+			FROM events
+			WHERE project_id = {projectId:String} AND event_type = 'error' AND fingerprint != ''
+			GROUP BY fingerprint
+			HAVING first_seen_at >= {since:DateTime64(3)}
+		`,
+		format: "JSONEachRow",
+		query_params: { projectId, since: toClickHouseDateTime64(since) },
+	});
+
+	const rows = await result.json<IssueRow>();
+	return rows.map((row) => toSummary(projectId, row));
 }
 
 export function parseIssueId(
