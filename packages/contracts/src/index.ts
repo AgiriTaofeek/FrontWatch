@@ -12,4 +12,5 @@ export type {
 	WireErrorPayload,
 	WireEvent,
 	WireEventType,
+	WireNetworkPayload,
 } from "./telemetry";

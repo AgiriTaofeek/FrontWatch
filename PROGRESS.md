@@ -136,8 +136,16 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done
 
 ## Step 7 — Context
 
+- [~] Network — **SDK side done**, Go/dashboard side not yet (see below for exact split)
+  - [x] `packages/contracts` + SDK `event.ts`: `EventType`/`WireEventType` extended to a real discriminated union (`error` | `network`) — the refactor Step 4's own comment said to do "when a second event_type is real"
+  - [x] `packages/sdk/src/network.ts`: automatic `fetch` capture. Resource normalization mirrors the backend fingerprint normalization's *idea* (strip numeric/UUID segments, drop query strings) in a different language — `/api/users/123` → `/api/users/:id`. XHR instrumentation deferred, not forgotten (materially different API shape, real separate work)
+  - [x] **Real gap caught while adding this**: `core-architecture.md` says `init()` is supposed to "register instrumentation" itself — ours never did, `registerErrorInstrumentation()` had to be called manually this whole time. Fixed by auto-registering both error and network instrumentation inside `init()`, with a dedicated registration guard (separate from `client.ts`'s own duplicate-init guard) so a second `init()` call can't double-wrap `window.fetch`
+  - [x] **Real architectural constraint respected, not worked around**: `errors.ts`/`network.ts` both import from `client.ts`; auto-registration logic lives in `index.ts` (not `client.ts`) specifically to avoid a circular import that moving it into `client.ts` would have created
+  - [x] Never captures the SDK's own telemetry requests as network events (would otherwise generate infinite low-value "network event about sending network events" noise) — `ignoreUrlPrefix` excludes the configured ingestion endpoint
+  - [x] **Real Bun testing gotcha found and documented**: `mock.module()` replaces a module in the *shared* registry for the whole test run, not scoped per file — `errors.test.ts`'s mock of `./client` (only stubbing `captureException`) broke `network.test.ts` when run together, since the mocked module didn't have `captureNetworkEvent`. Fixed by keeping every file's mock of a shared module complete, not just what that one file uses
+  - [x] 24 sdk tests passing (was 13), including 3 full-suite runs to confirm the mock-ordering fix actually holds, not just once
+  - [ ] Go ingestion currently **rejects** network events (`Event.Validate()` only accepts `event_type: "error"`) — fails gracefully via the existing partial-acceptance mechanism, not a crash, but real telemetry loss until the backend catches up. Next chunk: Go domain/worker/ClickHouse write path + a dashboard surface for network data
 - [ ] Session
-- [ ] Network
 - [ ] Performance
 - [ ] Release
 

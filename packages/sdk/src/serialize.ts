@@ -8,9 +8,8 @@ import type { FrontwatchEvent } from "./event";
 // keep evolving for internal-processing convenience without that
 // leaking into what actually goes over the wire.
 export function toWireEvent(event: FrontwatchEvent): WireEvent {
-	return {
+	const base = {
 		event_id: event.eventId,
-		event_type: event.eventType,
 		timestamp: event.clientTimestamp,
 		release: event.context.release,
 		session_id: event.context.sessionId,
@@ -18,6 +17,25 @@ export function toWireEvent(event: FrontwatchEvent): WireEvent {
 		// client (browser/os/device) omitted — no UA parsing yet, and it's
 		// not in api-contracts.md's required-fields list. Sending a
 		// wrongly-shaped partial object would be worse than omitting it.
+	};
+
+	if (event.eventType === "network") {
+		return {
+			...base,
+			event_type: "network",
+			payload: {
+				method: event.payload.method,
+				resource: event.payload.resource,
+				status: event.payload.status,
+				duration_ms: event.payload.durationMs,
+				outcome: event.payload.outcome,
+			},
+		};
+	}
+
+	return {
+		...base,
+		event_type: "error",
 		payload: {
 			message: event.payload.message,
 			exception_type: event.payload.exceptionType,
