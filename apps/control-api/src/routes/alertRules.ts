@@ -1,5 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import { Elysia, t } from "elysia";
+import { listAlertEvents } from "../db/alertEvents";
 import { db } from "../db/client";
 import { alertRules } from "../db/schema";
 
@@ -79,5 +80,42 @@ export const alertRulesRoutes = new Elysia()
 				ruleId: t.String({ format: "uuid" }),
 			}),
 			body: t.Object({ enabled: t.Boolean() }),
+		},
+	)
+	// Flat, not nested under /projects/:projectId — ruleId (a real
+	// Postgres uuid) already uniquely identifies a rule on its own, and
+	// the dashboard's detail page doesn't necessarily know the
+	// project id ahead of time. Same "flat route" lesson Release's
+	// detail page already had to learn the hard way (PROGRESS.md Step
+	// 7): a route nested under an existing list route's path becomes
+	// that route's layout child in TanStack Router's file-based
+	// routing, silently requiring an <Outlet /> the list page doesn't
+	// have.
+	.get(
+		"/alert-rules/:ruleId",
+		async ({ params, status }) => {
+			const [rule] = await db
+				.select()
+				.from(alertRules)
+				.where(eq(alertRules.id, params.ruleId));
+
+			if (!rule) {
+				return status(404, { error: "alert rule not found" });
+			}
+
+			return rule;
+		},
+		{
+			params: t.Object({ ruleId: t.String({ format: "uuid" }) }),
+		},
+	)
+	.get(
+		"/alert-rules/:ruleId/events",
+		async ({ params }) => {
+			const events = await listAlertEvents(params.ruleId);
+			return { alertEvents: events };
+		},
+		{
+			params: t.Object({ ruleId: t.String({ format: "uuid" }) }),
 		},
 	);

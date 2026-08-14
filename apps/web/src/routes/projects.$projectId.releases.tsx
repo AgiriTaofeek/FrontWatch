@@ -22,6 +22,9 @@ function ReleasesPage() {
 				</Link>{" "}
 				<Link to="/projects/$projectId/performance" params={{ projectId }}>
 					Performance
+				</Link>{" "}
+				<Link to="/projects/$projectId/alert-rules" params={{ projectId }}>
+					Alerts
 				</Link>
 			</nav>
 			<ReleaseList projectId={projectId} />

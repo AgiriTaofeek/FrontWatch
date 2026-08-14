@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { db } from "./client";
 import { alertEvents } from "./schema";
 
@@ -38,4 +38,15 @@ export async function markAlertEventNotified(
 		.update(alertEvents)
 		.set({ notifiedAt: new Date() })
 		.where(eq(alertEvents.id, alertEventId));
+}
+
+// The dashboard's read of a rule's fired-notification history —
+// alert-investigation.md's "related issues" for an alert, just scoped
+// the other direction (per-rule, not per-alert).
+export async function listAlertEvents(alertRuleId: string) {
+	return db
+		.select()
+		.from(alertEvents)
+		.where(eq(alertEvents.alertRuleId, alertRuleId))
+		.orderBy(desc(alertEvents.triggeredAt));
 }

@@ -1,4 +1,3 @@
-import { QueryClientProvider } from "@tanstack/react-query";
 import {
 	createRootRoute,
 	HeadContent,
@@ -6,8 +5,11 @@ import {
 	Scripts,
 } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { queryClient } from "../lib/query-client";
 
+// No <QueryClientProvider> here — router.tsx's setupRouterSsrQueryIntegration
+// call wraps the whole router tree in one automatically, using the
+// per-request QueryClient getRouter() creates. Wrapping it again here
+// would just be a second, redundant provider.
 export const Route = createRootRoute({
 	head: () => ({
 		meta: [
@@ -21,11 +23,9 @@ export const Route = createRootRoute({
 
 function RootComponent() {
 	return (
-		<QueryClientProvider client={queryClient}>
-			<RootDocument>
-				<Outlet />
-			</RootDocument>
-		</QueryClientProvider>
+		<RootDocument>
+			<Outlet />
+		</RootDocument>
 	);
 }
 

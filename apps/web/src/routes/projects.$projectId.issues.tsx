@@ -22,6 +22,9 @@ function IssuesPage() {
 				</Link>{" "}
 				<Link to="/projects/$projectId/releases" params={{ projectId }}>
 					Releases
+				</Link>{" "}
+				<Link to="/projects/$projectId/alert-rules" params={{ projectId }}>
+					Alerts
 				</Link>
 			</nav>
 			<IssueList projectId={projectId} />

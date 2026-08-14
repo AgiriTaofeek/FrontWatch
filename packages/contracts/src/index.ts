@@ -1,4 +1,9 @@
 export type {
+	AlertEventState,
+	AlertEventSummary,
+	ListAlertEventsResponse,
+} from "./alertEvents";
+export type {
 	AlertRuleSummary,
 	AlertRuleType,
 	ListAlertRulesResponse,
