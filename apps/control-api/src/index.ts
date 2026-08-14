@@ -1,4 +1,5 @@
 import { Elysia } from "elysia";
+import { alertRulesRoutes } from "./routes/alertRules";
 import { issuesRoutes } from "./routes/issues";
 import { networkRoutes } from "./routes/network";
 import { performanceRoutes } from "./routes/performance";
@@ -19,6 +20,7 @@ export const app = new Elysia({ prefix: "/api/v1" })
 	.use(sessionsRoutes)
 	.use(performanceRoutes)
 	.use(releasesRoutes)
+	.use(alertRulesRoutes)
 	.listen(3000);
 
 console.log(
