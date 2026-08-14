@@ -19,6 +19,9 @@ function PerformancePage() {
 				</Link>{" "}
 				<Link to="/projects/$projectId/sessions" params={{ projectId }}>
 					Sessions
+				</Link>{" "}
+				<Link to="/projects/$projectId/releases" params={{ projectId }}>
+					Releases
 				</Link>
 			</nav>
 			<PerformanceList projectId={projectId} />

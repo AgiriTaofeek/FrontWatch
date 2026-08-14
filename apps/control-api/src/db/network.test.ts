@@ -18,6 +18,7 @@ async function insertTestEvent(overrides: {
 	status: number;
 	durationMs: number;
 	outcome: "success" | "failure";
+	release?: string;
 	route?: string;
 	clientTimestamp: string;
 }) {
@@ -32,7 +33,7 @@ async function insertTestEvent(overrides: {
 				schema_version: 1,
 				client_timestamp: overrides.clientTimestamp,
 				server_received_at: overrides.clientTimestamp,
-				release: "",
+				release: overrides.release ?? "",
 				session_id: "",
 				route: overrides.route ?? "",
 				fingerprint: "",
@@ -145,6 +146,25 @@ describe("listNetworkResources (ADR-023-style aggregation)", () => {
 		// row (empty method/resource from JSONExtract on a mismatched
 		// payload shape would be the failure mode here).
 		expect(resources.some((r) => r.method === "")).toBe(false);
+	});
+
+	it("respects a release filter", async () => {
+		await insertTestEvent({
+			eventId: `evt_release_${Date.now()}`,
+			method: "GET",
+			resource: "/api/other",
+			status: 200,
+			durationMs: 10,
+			outcome: "success",
+			release: "2.0.0",
+			clientTimestamp: "2026-08-14 14:00:00.000",
+		});
+
+		const resources = await listNetworkResources(projectId, {
+			release: "2.0.0",
+		});
+		expect(resources).toHaveLength(1);
+		expect(resources[0]?.resource).toBe("/api/other");
 	});
 
 	it("respects a route filter", async () => {

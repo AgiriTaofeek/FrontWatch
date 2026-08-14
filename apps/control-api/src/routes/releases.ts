@@ -1,6 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import { Elysia, t } from "elysia";
 import { db } from "../db/client";
+import { getReleaseHealth } from "../db/releaseHealth";
 import { releases } from "../db/schema";
 
 // No auth/RBAC yet, same scope note as projects.ts/issues.ts
@@ -65,5 +66,21 @@ export const releasesRoutes = new Elysia()
 		},
 		{
 			params: t.Object({ projectId: t.String({ format: "uuid" }) }),
+		},
+	)
+	.get(
+		"/projects/:projectId/releases/:version/health",
+		async ({ params, status }) => {
+			const health = await getReleaseHealth(params.projectId, params.version);
+			if (!health) {
+				return status(404, { error: "release not found" });
+			}
+			return health;
+		},
+		{
+			params: t.Object({
+				projectId: t.String({ format: "uuid" }),
+				version: t.String(),
+			}),
 		},
 	);

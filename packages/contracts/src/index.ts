@@ -12,7 +12,11 @@ export type {
 	ListPerformanceMetricsResponse,
 	PerformanceMetricSummary,
 } from "./performance";
-export type { ListReleasesResponse, ReleaseSummary } from "./releases";
+export type {
+	ListReleasesResponse,
+	ReleaseHealth,
+	ReleaseSummary,
+} from "./releases";
 export type {
 	ListSessionsResponse,
 	SessionDetail,

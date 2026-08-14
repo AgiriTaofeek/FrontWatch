@@ -46,6 +46,7 @@ function toSummary(row: PerformanceMetricRow): PerformanceMetricSummary {
 }
 
 export interface ListPerformanceMetricsFilters {
+	release?: string;
 	route?: string;
 	from?: string;
 	to?: string;
@@ -68,6 +69,10 @@ export async function listPerformanceMetrics(
 	];
 	const params: Record<string, unknown> = { projectId };
 
+	if (filters.release) {
+		conditions.push("release = {release:String}");
+		params.release = filters.release;
+	}
 	if (filters.route) {
 		conditions.push("route = {route:String}");
 		params.route = filters.route;

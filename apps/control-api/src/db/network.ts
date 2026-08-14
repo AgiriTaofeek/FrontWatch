@@ -44,6 +44,7 @@ function toSummary(row: NetworkResourceRow): NetworkResourceSummary {
 }
 
 export interface ListNetworkResourcesFilters {
+	release?: string;
 	route?: string;
 	from?: string;
 	to?: string;
@@ -70,6 +71,10 @@ export async function listNetworkResources(
 	];
 	const params: Record<string, unknown> = { projectId, limit };
 
+	if (filters.release) {
+		conditions.push("release = {release:String}");
+		params.release = filters.release;
+	}
 	if (filters.route) {
 		conditions.push("route = {route:String}");
 		params.route = filters.route;

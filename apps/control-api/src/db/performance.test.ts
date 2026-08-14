@@ -16,6 +16,7 @@ async function insertEvent(overrides: {
 	metricName: string;
 	value: number;
 	rating: "good" | "needs-improvement" | "poor";
+	release?: string;
 	route?: string;
 	clientTimestamp: string;
 }) {
@@ -30,7 +31,7 @@ async function insertEvent(overrides: {
 				schema_version: 1,
 				client_timestamp: overrides.clientTimestamp,
 				server_received_at: overrides.clientTimestamp,
-				release: "",
+				release: overrides.release ?? "",
 				session_id: "",
 				route: overrides.route ?? "",
 				fingerprint: "",
@@ -134,6 +135,23 @@ describe("listPerformanceMetrics (ADR-023-style aggregation)", () => {
 		// mismatched payload shape would be the failure mode here).
 		expect(metrics.some((m) => m.metricName === ("" as never))).toBe(false);
 		expect(metrics).toHaveLength(2);
+	});
+
+	it("respects a release filter", async () => {
+		await insertEvent({
+			eventId: `evt_release_${Date.now()}`,
+			metricName: "TTFB",
+			value: 200,
+			rating: "good",
+			release: "2.0.0",
+			clientTimestamp: "2026-08-14 14:00:00.000",
+		});
+
+		const metrics = await listPerformanceMetrics(projectId, {
+			release: "2.0.0",
+		});
+		expect(metrics).toHaveLength(1);
+		expect(metrics[0]?.metricName).toBe("TTFB");
 	});
 
 	it("respects a route filter", async () => {
