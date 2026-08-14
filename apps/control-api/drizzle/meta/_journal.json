@@ -8,6 +8,13 @@
 			"when": 1786564917146,
 			"tag": "0000_thick_silvermane",
 			"breakpoints": true
+		},
+		{
+			"idx": 1,
+			"version": "7",
+			"when": 1786717571432,
+			"tag": "0001_wakeful_wonder_man",
+			"breakpoints": true
 		}
 	]
 }
