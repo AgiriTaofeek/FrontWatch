@@ -148,3 +148,67 @@ describe("PATCH /projects/:projectId/alert-rules/:ruleId", () => {
 		await db.delete(projects).where(eq(projects.id, otherProjectId));
 	});
 });
+
+describe("GET /alert-rules/:ruleId", () => {
+	it("returns a rule by id alone, no project scoping needed", async () => {
+		const ruleId = createdRuleIds[0];
+
+		const response = await alertRulesRoutes.handle(
+			new Request(`http://localhost/alert-rules/${ruleId}`),
+		);
+		const body = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(body.id).toBe(ruleId);
+		expect(body.projectId).toBe(projectId);
+	});
+
+	it("returns 404 for a rule id that doesn't exist", async () => {
+		const response = await alertRulesRoutes.handle(
+			new Request(
+				"http://localhost/alert-rules/00000000-0000-0000-0000-000000000000",
+			),
+		);
+		expect(response.status).toBe(404);
+	});
+});
+
+describe("GET /alert-rules/:ruleId/events", () => {
+	it("returns an empty list for a rule with no fired events yet", async () => {
+		const ruleId = createdRuleIds[0];
+
+		const response = await alertRulesRoutes.handle(
+			new Request(`http://localhost/alert-rules/${ruleId}/events`),
+		);
+		const body = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(body.alertEvents).toHaveLength(0);
+	});
+
+	it("lists fired events for a rule, newest first", async () => {
+		const ruleId = createdRuleIds[0];
+		if (!ruleId) throw new Error("expected a rule from an earlier test");
+
+		await db.insert(alertEvents).values([
+			{ alertRuleId: ruleId, fingerprint: "fp_older" },
+			{ alertRuleId: ruleId, fingerprint: "fp_newer" },
+		]);
+
+		const response = await alertRulesRoutes.handle(
+			new Request(`http://localhost/alert-rules/${ruleId}/events`),
+		);
+		const body = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(body.alertEvents).toHaveLength(2);
+		// Both rows insert at effectively "now" via defaultNow() — the
+		// meaningful assertion is that both fingerprints round-trip
+		// correctly, ordering-by-insertion-order isn't guaranteed at
+		// millisecond resolution.
+		const fingerprints = body.alertEvents.map(
+			(e: { fingerprint: string }) => e.fingerprint,
+		);
+		expect(fingerprints.sort()).toEqual(["fp_newer", "fp_older"]);
+	});
+});
