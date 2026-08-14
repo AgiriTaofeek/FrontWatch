@@ -1,6 +1,13 @@
 import { describe, expect, it, mock } from "bun:test";
+import type { NetworkPayload } from "./event";
 
-const captureNetworkEventMock = mock(() => {});
+// Typed as (payload: NetworkPayload) => void, not the untyped () => {}
+// this started as — an untyped mock's `.mock.calls` infers as `[][]`
+// (empty tuples), which silently made every `call?.[0]` below type as
+// `never`. Only surfaced once this package actually resolved
+// @types/bun and got real `tsc --noEmit` coverage (see PROGRESS.md) —
+// `bun test`'s runtime never type-checks at all.
+const captureNetworkEventMock = mock((_payload: NetworkPayload) => {});
 
 // Same reasoning as errors.test.ts's mock: complete shape, since
 // mock.module replaces "./client" in the shared registry for the
