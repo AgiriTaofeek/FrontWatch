@@ -5,6 +5,10 @@ export type {
 	OccurrenceSummary,
 } from "./issues";
 export type {
+	ListNetworkResourcesResponse,
+	NetworkResourceSummary,
+} from "./network";
+export type {
 	IngestRejection,
 	IngestRequest,
 	IngestResponse,

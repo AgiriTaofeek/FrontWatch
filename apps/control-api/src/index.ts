@@ -1,5 +1,6 @@
 import { Elysia } from "elysia";
 import { issuesRoutes } from "./routes/issues";
+import { networkRoutes } from "./routes/network";
 import { projectsRoutes } from "./routes/projects";
 
 // api-contracts.md documents every control-plane endpoint under
@@ -11,6 +12,7 @@ import { projectsRoutes } from "./routes/projects";
 export const app = new Elysia({ prefix: "/api/v1" })
 	.use(projectsRoutes)
 	.use(issuesRoutes)
+	.use(networkRoutes)
 	.listen(3000);
 
 console.log(
