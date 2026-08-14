@@ -9,6 +9,10 @@ export type {
 	NetworkResourceSummary,
 } from "./network";
 export type {
+	ListPerformanceMetricsResponse,
+	PerformanceMetricSummary,
+} from "./performance";
+export type {
 	ListSessionsResponse,
 	SessionDetail,
 	SessionEvent,
