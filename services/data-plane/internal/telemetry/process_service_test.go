@@ -65,6 +65,30 @@ func TestProcessEventService_Process(t *testing.T) {
 		}
 	})
 
+	t.Run("passes a valid performance event through without fingerprinting", func(t *testing.T) {
+		fp := &fakeFingerprinter{}
+		service := NewProcessEventService(fp)
+
+		event := Event{
+			EventID:            "evt_perf_1",
+			EventType:          EventTypePerformance,
+			SchemaVersion:      1,
+			Timestamp:          time.Now(),
+			PerformancePayload: &PerformancePayload{MetricName: "LCP", Value: 1800, Rating: "good"},
+		}
+
+		result, err := service.Process(event)
+		if err != nil {
+			t.Fatalf("Process() = %v, want nil", err)
+		}
+		if result.Fingerprint != "" {
+			t.Errorf("Fingerprint = %q, want empty (performance events aren't fingerprinted)", result.Fingerprint)
+		}
+		if fp.calls != 0 {
+			t.Errorf("Fingerprinter called %d times, want 0", fp.calls)
+		}
+	})
+
 	t.Run("rejects an invalid event before fingerprinting", func(t *testing.T) {
 		fp := &fakeFingerprinter{}
 		service := NewProcessEventService(fp)

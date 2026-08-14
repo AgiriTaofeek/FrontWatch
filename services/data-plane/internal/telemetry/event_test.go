@@ -35,6 +35,20 @@ func validNetworkEvent() Event {
 	}
 }
 
+func validPerformanceEvent() Event {
+	return Event{
+		EventID:   "evt_perf_123",
+		EventType: EventTypePerformance,
+		Timestamp: time.Now(),
+		PerformancePayload: &PerformancePayload{
+			MetricName:     "LCP",
+			Value:          1800,
+			Rating:         "good",
+			NavigationType: "navigate",
+		},
+	}
+}
+
 func TestEvent_Validate(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -57,7 +71,7 @@ func TestEvent_Validate(t *testing.T) {
 		{
 			name:    "unsupported event_type",
 			event:   validErrorEvent(),
-			mutate:  func(e Event) Event { e.EventType = "performance"; return e },
+			mutate:  func(e Event) Event { e.EventType = "breadcrumb"; return e },
 			wantErr: ErrUnsupportedType,
 		},
 		{
@@ -101,6 +115,30 @@ func TestEvent_Validate(t *testing.T) {
 			event:   validNetworkEvent(),
 			mutate:  func(e Event) Event { e.NetworkPayload.Resource = ""; return e },
 			wantErr: ErrMissingResource,
+		},
+		{
+			name:    "valid performance event passes",
+			event:   validPerformanceEvent(),
+			mutate:  func(e Event) Event { return e },
+			wantErr: nil,
+		},
+		{
+			name:    "valid performance event with a zero value still passes (CLS=0 is real, not missing)",
+			event:   validPerformanceEvent(),
+			mutate:  func(e Event) Event { e.PerformancePayload.Value = 0; return e },
+			wantErr: nil,
+		},
+		{
+			name:    "missing performance payload",
+			event:   validPerformanceEvent(),
+			mutate:  func(e Event) Event { e.PerformancePayload = nil; return e },
+			wantErr: ErrMissingPayload,
+		},
+		{
+			name:    "missing payload metric_name",
+			event:   validPerformanceEvent(),
+			mutate:  func(e Event) Event { e.PerformancePayload.MetricName = ""; return e },
+			wantErr: ErrMissingMetricName,
 		},
 	}
 
@@ -174,6 +212,31 @@ func TestEvent_JSONRoundTrip(t *testing.T) {
 		}
 		if got.NetworkPayload == nil || *got.NetworkPayload != *want.NetworkPayload {
 			t.Errorf("NetworkPayload = %+v, want %+v", got.NetworkPayload, want.NetworkPayload)
+		}
+	})
+
+	t.Run("performance event", func(t *testing.T) {
+		want := validPerformanceEvent()
+		want.SchemaVersion = 1
+
+		data, err := json.Marshal(want)
+		if err != nil {
+			t.Fatalf("Marshal() = %v", err)
+		}
+
+		var got Event
+		if err := json.Unmarshal(data, &got); err != nil {
+			t.Fatalf("Unmarshal() = %v", err)
+		}
+
+		if got.ErrorPayload != nil {
+			t.Errorf("ErrorPayload = %+v, want nil", got.ErrorPayload)
+		}
+		if got.NetworkPayload != nil {
+			t.Errorf("NetworkPayload = %+v, want nil", got.NetworkPayload)
+		}
+		if got.PerformancePayload == nil || *got.PerformancePayload != *want.PerformancePayload {
+			t.Errorf("PerformancePayload = %+v, want %+v", got.PerformancePayload, want.PerformancePayload)
 		}
 	})
 
