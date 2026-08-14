@@ -17,6 +17,18 @@ services:
 
   clickhouse:
     image: clickhouse/clickhouse-server:24.8
+    environment:
+      # Without these, the official image explicitly disables network
+      # access for the 'default' user entirely — confirmed directly
+      # from its own startup log: "neither CLICKHOUSE_USER nor
+      # CLICKHOUSE_PASSWORD is set, disabling network access for user
+      # 'default'". Only in-container (unix socket) connections worked
+      # before this; nothing external — not even the host — could ever
+      # authenticate. The /ping healthcheck never caught it because
+      # that endpoint doesn't require authentication.
+      CLICKHOUSE_USER: frontwatch
+      CLICKHOUSE_PASSWORD: frontwatch_dev
+      CLICKHOUSE_DB: frontwatch
     ports:
       - "8123:8123" # HTTP interface
       - "9000:9000" # native protocol (faster, most client libraries use this)

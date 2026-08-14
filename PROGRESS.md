@@ -97,10 +97,16 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done
 
 ## Step 5 — Processing
 
-- [ ] Consume from Redpanda
-- [ ] Normalize
-- [ ] Fingerprint
-- [ ] Write to ClickHouse
+- [x] **Scope clarified**: issue grouping/counts/the Issue entity itself are Step 6's job, not Step 5's — this step is consume → decode/validate → normalize (pass-through, no framework-specific shapes exist yet to normalize) → fingerprint → write raw events, no mutable state
+- [x] `migrations/clickhouse/0001_create_events_table` — `golang-migrate` (v4.19.1) with the ClickHouse driver, same versioned/reviewable role `drizzle-kit` plays for Postgres. `events` table: `ReplacingMergeTree`, partitioned by `toDate(client_timestamp)` (data-model.md §7's literal recommendation), ordered by `(project_id, event_type, client_timestamp, event_id)`
+- [x] **Real infra bug #3 found and fixed, same class as Redpanda's**: the official ClickHouse image disables network access entirely for the `default` user unless `CLICKHOUSE_USER`/`CLICKHOUSE_PASSWORD` is set — confirmed directly from its own startup log. ClickHouse had been unreachable from outside its own container this whole time; the `/ping` healthcheck never required auth so never caught it
+- [x] `internal/issue/fingerprint.go` — SHA-256 of `exception_type + normalized_message`, truncated to 16 hex chars, versioned (`FingerprintVersion`) per the legacy fingerprinting spec's explicit requirement. Normalization strips numbers/UUIDs/hex/quoted strings — noise-resistance verified both in unit tests and end-to-end (two real events with different order IDs through the whole running pipeline produced the identical fingerprint)
+- [x] `internal/storage/clickhouse` — `EventWriter`, `clickhouse-go` v2.48.0 (official client)
+- [x] `internal/telemetry/process_service.go` — `ProcessEventService` (Normalize→Fingerprint only; persist is the worker's wiring concern, not this service's)
+- [x] `cmd/worker/main.go` wired together — `franz-go` consumer group, manual per-record commit strictly in order (a plain loop, not `EachRecord`'s callback — needed the ability to `break` early on a persist failure, since Kafka's committed offset is a single watermark per partition, not a sparse set; committing a later record would have silently marked an earlier failed one as done too)
+- [x] **Full end-to-end verification**: real project created, both ingestion and worker started for real, sent real events through `curl` → ingestion → Redpanda → worker → ClickHouse, confirmed via direct ClickHouse queries. Also verified the explicit "malformed event must never terminate the worker" requirement by publishing genuinely broken JSON straight onto the topic — logged clearly, worker kept running
+
+**Done:** 2026-08-14 — closes Step 5. **Deferred, not forgotten:** bounded-concurrency record processing (currently sequential — simplest-correct, not yet a throughput bottleneck), retry-with-backoff before giving up on a persist failure (currently stops and waits for redelivery/restart), dead-lettering malformed/invalid records (currently logged and skipped), enrichment (browser family/device class — blocked on the same UA-parsing gap noted in Step 3), a second server-side privacy layer (instrumentation.md names this; neither layer is real yet, client or server).
 
 ---
 

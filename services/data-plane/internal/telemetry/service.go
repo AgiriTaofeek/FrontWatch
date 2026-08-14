@@ -59,6 +59,13 @@ func (s *IngestService) Ingest(ctx context.Context, publicKey string, req Ingest
 
 	result := IngestResult{}
 	for _, event := range req.Events {
+		// data-model.md §3: "every event carries schema_version" — the
+		// wire batch envelope has one, individual events don't declare
+		// their own, so it's attached here rather than assumed
+		// downstream (the worker consuming from Redpanda has no other
+		// way to know it).
+		event.SchemaVersion = req.SchemaVersion
+
 		if err := event.Validate(); err != nil {
 			result.Rejected++
 			result.Rejections = append(result.Rejections, Rejection{EventID: event.EventID, Code: "INVALID_EVENT"})

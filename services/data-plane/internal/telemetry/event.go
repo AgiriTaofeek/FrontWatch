@@ -45,13 +45,14 @@ type ErrorPayload struct {
 // services.md warns against for repositories. Revisit when a second
 // event_type is real.
 type Event struct {
-	EventID   string       `json:"event_id"`
-	EventType EventType    `json:"event_type"`
-	Timestamp time.Time    `json:"timestamp"`
-	Release   string       `json:"release,omitempty"`
-	SessionID string       `json:"session_id,omitempty"`
-	Route     string       `json:"route,omitempty"`
-	Payload   ErrorPayload `json:"payload"`
+	EventID       string       `json:"event_id"`
+	EventType     EventType    `json:"event_type"`
+	SchemaVersion int          `json:"schema_version"`
+	Timestamp     time.Time    `json:"timestamp"`
+	Release       string       `json:"release,omitempty"`
+	SessionID     string       `json:"session_id,omitempty"`
+	Route         string       `json:"route,omitempty"`
+	Payload       ErrorPayload `json:"payload"`
 }
 
 // Validate checks exactly the required fields api-contracts.md §4 names:
