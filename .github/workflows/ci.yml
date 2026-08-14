@@ -63,6 +63,42 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Biome (lint + format check)
         run: bunx --bun @biomejs/biome ci .
+      # `bun test` never type-checks — it only strips types and runs.
+      # Nothing here caught that until @types/bun was actually resolvable
+      # for every package (a real, previously-invisible gap: packages/sdk
+      # and packages/contracts had no @types/bun at all, only
+      # control-api did, individually — fixed by hoisting it to the root
+      # devDependencies once instead of per-package). Running it here
+      # once per package, the same way tests are already scoped, is what
+      # actually caught two real type errors in packages/sdk (an
+      # untyped mock making `.mock.calls` infer as `[][]`, and a
+      # `window.fetch` reassignment that stopped structurally matching
+      # `typeof fetch` once @types/bun's Bun-specific `fetch.preconnect`
+      # augmentation became visible).
+      - name: Typecheck (contracts)
+        working-directory: packages/contracts
+        run: bunx tsc --noEmit
+      - name: Typecheck (sdk)
+        working-directory: packages/sdk
+        run: bunx tsc --noEmit
+      - name: Typecheck (control-api)
+        working-directory: apps/control-api
+        run: bunx tsc --noEmit
+      # apps/web's routeTree.gen.ts is gitignored — TanStack Start's Vite
+      # plugin generates it from src/routes/ on every dev/build run, so a
+      # fresh CI checkout never has it. Confirmed the hard way: this
+      # Typecheck step failed here first (Cannot find module
+      # './routeTree.gen') even though `bunx tsc --noEmit` had just
+      # passed locally — locally there was a leftover generated file
+      # from an earlier manual `vite build`, which a clean CI checkout
+      # never has. `vite build` (not `dev`, which never exits) generates
+      # the same file and terminates on its own.
+      - name: Generate route tree
+        working-directory: apps/web
+        run: bunx vite build
+      - name: Typecheck (web)
+        working-directory: apps/web
+        run: bunx tsc --noEmit
       - name: Run Postgres migrations
         working-directory: apps/control-api
         run: bunx drizzle-kit migrate

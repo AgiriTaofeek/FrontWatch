@@ -48,7 +48,17 @@ export function registerNetworkInstrumentation(
 ): void {
 	const originalFetch = window.fetch.bind(window);
 
-	window.fetch = async (...args: Parameters<typeof fetch>) => {
+	// `as typeof fetch`: @types/bun augments the global `fetch` with a
+	// Bun-specific `.preconnect()` method (real in Bun's own runtime,
+	// meaningless for a browser SDK) — once this package started
+	// resolving @types/bun (a real gap fixed alongside this change, see
+	// PROGRESS.md), that global collided with lib.dom's `fetch` type and
+	// this plain async function stopped structurally matching `typeof
+	// fetch`. The cast documents that the mismatch is about a type-level
+	// collision between two ambient globals, not a real missing method
+	// this wrapper needs to implement — this SDK runs in real browsers,
+	// where `window.fetch.preconnect` never exists either.
+	window.fetch = (async (...args: Parameters<typeof fetch>) => {
 		const request = new Request(...args);
 
 		if (request.url.startsWith(options.ignoreUrlPrefix)) {
@@ -79,5 +89,5 @@ export function registerNetworkInstrumentation(
 			// exactly what it would have without this wrapper installed.
 			throw error;
 		}
-	};
+	}) as typeof fetch;
 }
