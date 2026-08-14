@@ -13,6 +13,9 @@ function NetworkPage() {
 			<nav>
 				<Link to="/projects/$projectId/issues" params={{ projectId }}>
 					Issues
+				</Link>{" "}
+				<Link to="/projects/$projectId/sessions" params={{ projectId }}>
+					Sessions
 				</Link>
 			</nav>
 			<NetworkList projectId={projectId} />

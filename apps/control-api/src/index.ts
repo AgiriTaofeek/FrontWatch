@@ -2,6 +2,7 @@ import { Elysia } from "elysia";
 import { issuesRoutes } from "./routes/issues";
 import { networkRoutes } from "./routes/network";
 import { projectsRoutes } from "./routes/projects";
+import { sessionsRoutes } from "./routes/sessions";
 
 // api-contracts.md documents every control-plane endpoint under
 // /api/v1/... — ingestion already follows this (/ingest/v1/events).
@@ -13,6 +14,7 @@ export const app = new Elysia({ prefix: "/api/v1" })
 	.use(projectsRoutes)
 	.use(issuesRoutes)
 	.use(networkRoutes)
+	.use(sessionsRoutes)
 	.listen(3000);
 
 console.log(

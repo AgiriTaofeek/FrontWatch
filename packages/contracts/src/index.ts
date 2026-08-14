@@ -9,6 +9,12 @@ export type {
 	NetworkResourceSummary,
 } from "./network";
 export type {
+	ListSessionsResponse,
+	SessionDetail,
+	SessionEvent,
+	SessionSummary,
+} from "./sessions";
+export type {
 	IngestRejection,
 	IngestRequest,
 	IngestResponse,
