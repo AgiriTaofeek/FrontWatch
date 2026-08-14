@@ -26,7 +26,7 @@ func TestProcessEventService_Process(t *testing.T) {
 			EventType:     EventTypeError,
 			SchemaVersion: 1,
 			Timestamp:     time.Now(),
-			Payload:       ErrorPayload{Message: "boom", ExceptionType: "TypeError"},
+			ErrorPayload:  &ErrorPayload{Message: "boom", ExceptionType: "TypeError"},
 		}
 
 		result, err := service.Process(event)
@@ -38,6 +38,30 @@ func TestProcessEventService_Process(t *testing.T) {
 		}
 		if fp.calls != 1 {
 			t.Errorf("Fingerprinter called %d times, want 1", fp.calls)
+		}
+	})
+
+	t.Run("passes a valid network event through without fingerprinting", func(t *testing.T) {
+		fp := &fakeFingerprinter{}
+		service := NewProcessEventService(fp)
+
+		event := Event{
+			EventID:        "evt_net_1",
+			EventType:      EventTypeNetwork,
+			SchemaVersion:  1,
+			Timestamp:      time.Now(),
+			NetworkPayload: &NetworkPayload{Method: "GET", Resource: "/api/users/:id", Status: 200, Outcome: "success"},
+		}
+
+		result, err := service.Process(event)
+		if err != nil {
+			t.Fatalf("Process() = %v, want nil", err)
+		}
+		if result.Fingerprint != "" {
+			t.Errorf("Fingerprint = %q, want empty (network events aren't fingerprinted)", result.Fingerprint)
+		}
+		if fp.calls != 0 {
+			t.Errorf("Fingerprinter called %d times, want 0", fp.calls)
 		}
 	})
 

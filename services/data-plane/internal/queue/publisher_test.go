@@ -43,7 +43,7 @@ func TestPublisher_PublishEvent(t *testing.T) {
 		EventID:   "evt_queue_test_" + time.Now().Format(time.RFC3339Nano),
 		EventType: telemetry.EventTypeError,
 		Timestamp: time.Now().UTC().Truncate(time.Millisecond),
-		Payload: telemetry.ErrorPayload{
+		ErrorPayload: &telemetry.ErrorPayload{
 			Message:       "queue integration test",
 			ExceptionType: "TestError",
 			Handled:       true,
@@ -96,8 +96,8 @@ func TestPublisher_PublishEvent(t *testing.T) {
 			if string(record.Key) != "test-project-id" {
 				t.Errorf("record key = %q, want %q", record.Key, "test-project-id")
 			}
-			if got.Payload.Message != wantEvent.Payload.Message {
-				t.Errorf("Payload.Message = %q, want %q", got.Payload.Message, wantEvent.Payload.Message)
+			if got.ErrorPayload == nil || got.ErrorPayload.Message != wantEvent.ErrorPayload.Message {
+				t.Errorf("ErrorPayload.Message = %v, want %q", got.ErrorPayload, wantEvent.ErrorPayload.Message)
 			}
 		})
 	}

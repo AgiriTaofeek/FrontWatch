@@ -3,6 +3,7 @@ package clickhouse
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -39,7 +40,7 @@ func TestEventWriter_WriteEvent(t *testing.T) {
 			Release:       "2026.08.14",
 			SessionID:     "sess_ch_test",
 			Route:         "/dashboard",
-			Payload: telemetry.ErrorPayload{
+			ErrorPayload: &telemetry.ErrorPayload{
 				Message:       "clickhouse integration test",
 				ExceptionType: "TestError",
 				Handled:       false,
@@ -87,5 +88,72 @@ func TestEventWriter_WriteEvent(t *testing.T) {
 	}
 	if gotPayload == "" {
 		t.Error("payload = empty, want the marshaled error payload")
+	}
+}
+
+// TestEventWriter_WriteEvent_NetworkEvent covers the write path for the
+// other Event variant — PayloadJSON()'s switch has two branches, and
+// only the error one was exercised above.
+func TestEventWriter_WriteEvent_NetworkEvent(t *testing.T) {
+	addr := os.Getenv("CLICKHOUSE_ADDR")
+	if addr == "" {
+		t.Skip("CLICKHOUSE_ADDR not set, skipping ClickHouse integration test")
+	}
+
+	conn, err := NewConnection(addr,
+		os.Getenv("CLICKHOUSE_DATABASE"),
+		os.Getenv("CLICKHOUSE_USERNAME"),
+		os.Getenv("CLICKHOUSE_PASSWORD"),
+	)
+	if err != nil {
+		t.Fatalf("NewConnection() = %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	writer := NewEventWriter(conn)
+
+	eventID := "evt_ch_net_test_" + time.Now().Format(time.RFC3339Nano)
+	stored := StoredEvent{
+		Event: telemetry.Event{
+			EventID:       eventID,
+			EventType:     telemetry.EventTypeNetwork,
+			SchemaVersion: 1,
+			Timestamp:     time.Now().UTC().Truncate(time.Millisecond),
+			SessionID:     "sess_ch_net_test",
+			Route:         "/dashboard",
+			NetworkPayload: &telemetry.NetworkPayload{
+				Method:     "GET",
+				Resource:   "/api/users/:id",
+				Status:     200,
+				DurationMs: 42.5,
+				Outcome:    "success",
+			},
+		},
+		ProjectID:        "proj_ch_net_test",
+		ServerReceivedAt: time.Now().UTC().Truncate(time.Millisecond),
+	}
+
+	ctx := context.Background()
+	if err := writer.WriteEvent(ctx, stored); err != nil {
+		t.Fatalf("WriteEvent() = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = conn.Exec(context.Background(), "ALTER TABLE events DELETE WHERE event_id = ?", eventID)
+	})
+
+	row := conn.QueryRow(ctx, `
+		SELECT event_type, payload
+		FROM events WHERE event_id = ?`, eventID)
+
+	var gotEventType, gotPayload string
+	if err := row.Scan(&gotEventType, &gotPayload); err != nil {
+		t.Fatalf("querying written event: %v", err)
+	}
+
+	if gotEventType != string(telemetry.EventTypeNetwork) {
+		t.Errorf("event_type = %q, want %q", gotEventType, telemetry.EventTypeNetwork)
+	}
+	if !strings.Contains(gotPayload, `"resource":"/api/users/:id"`) {
+		t.Errorf("payload = %q, want it to contain the network payload's resource", gotPayload)
 	}
 }

@@ -35,10 +35,10 @@ func validRequest() IngestRequest {
 		SentAt:        time.Now(),
 		Events: []Event{
 			{
-				EventID:   "evt_1",
-				EventType: EventTypeError,
-				Timestamp: time.Now(),
-				Payload:   ErrorPayload{Message: "boom", ExceptionType: "Error"},
+				EventID:      "evt_1",
+				EventType:    EventTypeError,
+				Timestamp:    time.Now(),
+				ErrorPayload: &ErrorPayload{Message: "boom", ExceptionType: "Error"},
 			},
 		},
 	}
@@ -58,6 +58,32 @@ func TestIngestService_Ingest(t *testing.T) {
 		}
 		if len(publisher.published) != 1 {
 			t.Fatalf("published %d events, want 1", len(publisher.published))
+		}
+	})
+
+	t.Run("accepts a valid network event and publishes it", func(t *testing.T) {
+		publisher := &fakePublisher{}
+		service := NewIngestService(fakeCredentials{projectID: "proj_1"}, publisher)
+
+		req := IngestRequest{
+			SchemaVersion: 1,
+			SentAt:        time.Now(),
+			Events: []Event{
+				{
+					EventID:        "evt_net_1",
+					EventType:      EventTypeNetwork,
+					Timestamp:      time.Now(),
+					NetworkPayload: &NetworkPayload{Method: "GET", Resource: "/api/users/:id", Status: 200, Outcome: "success"},
+				},
+			},
+		}
+
+		result, err := service.Ingest(context.Background(), "fw_pk_valid", req)
+		if err != nil {
+			t.Fatalf("Ingest() = %v, want nil", err)
+		}
+		if result.Accepted != 1 || result.Rejected != 0 {
+			t.Fatalf("result = %+v, want 1 accepted, 0 rejected", result)
 		}
 	})
 
@@ -99,10 +125,10 @@ func TestIngestService_Ingest(t *testing.T) {
 
 		req := validRequest()
 		req.Events = append(req.Events, Event{
-			EventID:   "evt_2",
-			EventType: EventTypeError,
-			Timestamp: time.Now(),
-			Payload:   ErrorPayload{Message: "ok", ExceptionType: "Error"},
+			EventID:      "evt_2",
+			EventType:    EventTypeError,
+			Timestamp:    time.Now(),
+			ErrorPayload: &ErrorPayload{Message: "ok", ExceptionType: "Error"},
 		})
 
 		result, err := service.Ingest(context.Background(), "fw_pk_valid", req)
