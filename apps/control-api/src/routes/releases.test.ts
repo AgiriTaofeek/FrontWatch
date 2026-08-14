@@ -131,3 +131,30 @@ describe("GET /projects/:projectId/releases", () => {
 		await db.delete(projects).where(eq(projects.id, otherProjectId));
 	});
 });
+
+describe("GET /projects/:projectId/releases/:version/health", () => {
+	it("returns health for a real release, with no telemetry yet all-zero, not an error", async () => {
+		const response = await releasesRoutes.handle(
+			new Request(
+				`http://localhost/projects/${projectId}/releases/1.0.0/health`,
+			),
+		);
+		const body = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(body.version).toBe("1.0.0");
+		expect(body.errorCount).toBe(0);
+		expect(body.issueCount).toBe(0);
+		expect(body.networkFailureRate).toBe(0);
+		expect(body.performanceMetrics).toHaveLength(0);
+	});
+
+	it("returns 404 for a version with no release record", async () => {
+		const response = await releasesRoutes.handle(
+			new Request(
+				`http://localhost/projects/${projectId}/releases/9.9.9/health`,
+			),
+		);
+		expect(response.status).toBe(404);
+	});
+});
