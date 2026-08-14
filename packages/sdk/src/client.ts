@@ -1,6 +1,12 @@
 import { EventBuffer } from "./buffer";
 import { buildContext, type SdkConfig } from "./context";
-import { createEvent, type ErrorPayload } from "./event";
+import {
+	createErrorEvent,
+	createNetworkEvent,
+	type ErrorPayload,
+	type FrontwatchEvent,
+	type NetworkPayload,
+} from "./event";
 import { applyPrivacy } from "./privacy";
 import { Transport } from "./transport";
 
@@ -39,11 +45,29 @@ export class Client {
 		if (!this.enabled) {
 			return;
 		}
-
 		const payload = errorToPayload(error, handled);
 		const context = buildContext(this.config);
-		const event = applyPrivacy(createEvent("error", payload, context));
-		this.buffer.add(event);
+		this.recordEvent(createErrorEvent(payload, context));
+	}
+
+	// Automatic-only — instrumentation.md doesn't document a manual API
+	// for network events the way captureException is documented as
+	// manual+automatic, so this stays un-exported from the package's
+	// public surface (index.ts), used only by network.ts.
+	captureNetworkEvent(payload: NetworkPayload): void {
+		if (!this.enabled) {
+			return;
+		}
+		const context = buildContext(this.config);
+		this.recordEvent(createNetworkEvent(payload, context));
+	}
+
+	// Shared by both capture methods above — now that there's a second
+	// real caller, the shared privacy->buffer->flush sequence earns
+	// being factored out (event *construction* stays separate per
+	// type, in event.ts, since that part genuinely differs).
+	private recordEvent(event: FrontwatchEvent): void {
+		this.buffer.add(applyPrivacy(event));
 		// Skeleton: flush immediately rather than on a timer/threshold —
 		// real flush scheduling (interval, buffer-full threshold, shutdown
 		// flush) is follow-up work, once there's an actual reason to batch
@@ -102,4 +126,12 @@ export function captureException(error: unknown, handled = true): void {
 		return;
 	}
 	client.captureException(error, handled);
+}
+
+// No console.warn-before-init here unlike captureException — this is
+// called automatically, at high frequency, by network.ts's fetch
+// wrapper; warning on every request before init() would be noisy in a
+// way a one-off manual captureException() call before init() isn't.
+export function captureNetworkEvent(payload: NetworkPayload): void {
+	client?.captureNetworkEvent(payload);
 }
