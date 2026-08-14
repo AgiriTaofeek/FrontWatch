@@ -87,6 +87,32 @@ func TestIngestService_Ingest(t *testing.T) {
 		}
 	})
 
+	t.Run("accepts a valid performance event and publishes it", func(t *testing.T) {
+		publisher := &fakePublisher{}
+		service := NewIngestService(fakeCredentials{projectID: "proj_1"}, publisher)
+
+		req := IngestRequest{
+			SchemaVersion: 1,
+			SentAt:        time.Now(),
+			Events: []Event{
+				{
+					EventID:            "evt_perf_1",
+					EventType:          EventTypePerformance,
+					Timestamp:          time.Now(),
+					PerformancePayload: &PerformancePayload{MetricName: "LCP", Value: 1800, Rating: "good"},
+				},
+			},
+		}
+
+		result, err := service.Ingest(context.Background(), "fw_pk_valid", req)
+		if err != nil {
+			t.Fatalf("Ingest() = %v, want nil", err)
+		}
+		if result.Accepted != 1 || result.Rejected != 0 {
+			t.Fatalf("result = %+v, want 1 accepted, 0 rejected", result)
+		}
+	})
+
 	t.Run("rejects the whole batch for an invalid credential", func(t *testing.T) {
 		publisher := &fakePublisher{}
 		service := NewIngestService(fakeCredentials{err: errors.New("not found")}, publisher)
