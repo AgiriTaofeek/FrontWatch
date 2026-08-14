@@ -1,0 +1,16 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { IssueList } from "../features/issues/IssueList";
+
+export const Route = createFileRoute("/projects/$projectId/issues")({
+	component: IssuesPage,
+});
+
+function IssuesPage() {
+	const { projectId } = Route.useParams();
+	return (
+		<div>
+			<h1>Issues</h1>
+			<IssueList projectId={projectId} />
+		</div>
+	);
+}

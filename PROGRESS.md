@@ -121,10 +121,16 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done
 - [x] **Real format gap caught by testing**: ClickHouse's `DateTime64` via JSONEachRow insert wants its own `YYYY-MM-DD HH:MM:SS.mmm` string format, not ISO-8601 with `T`/`Z` — didn't surface in Step 5 because Go's client uses the binary native protocol, not string parsing
 - [x] **Full end-to-end verification through all three services**: real project created, ingestion + worker + control-api all started for real, a `curl` request matching `mvp.md` §3's exact golden scenario (release `4.2.0`, route `/transfer`) sent through ingestion → Redpanda → worker → ClickHouse → confirmed visible via the real issue list and issue detail endpoints
 - [x] CI: added ClickHouse to the TS job too (separate runner from the Go job, needs its own migrated instance) — the migration step there needs `golang-migrate` (Go-based) even though it's nominally the "TypeScript" job, since that's the one tool this project uses for ClickHouse schema
-- [ ] Dashboard issue list
-- [ ] Dashboard issue detail
+- [x] `apps/web` bootstrapped for real — TanStack Start (ADR-024), first frontend code since Step 1. `@tanstack/react-query` as the "dedicated query layer" `application-architecture.md` requires, query keys include every filter (`["issues", projectId]`), 30s `staleTime` per its "cache short-lived, telemetry isn't immutable" rule
+- [x] `packages/contracts/src/issues.ts` — the Issue API's response shapes shared between `control-api` and `web`, same lesson Step 4 already paid for once with the SDK/ingestion wire contract: one definition, not two that can quietly drift
+- [x] Dashboard issue list — `/projects/$projectId/issues`, real server-rendered data (TanStack Start streamed the `useSuspenseQuery` result into the initial HTML with zero explicit loader wiring — confirmed by reading the raw SSR'd HTML, not assumed)
+- [x] Dashboard issue detail — `/issues/$issueId`, links directly from the list
+- [x] **Two real setup bugs found only by actually starting the dev server**, not by writing the code: (1) `vite.config.ts` failed to load — `@tanstack/react-start/plugin/vite` is ESM-only but was being `require()`'d, because `apps/web/package.json` was missing `"type": "module"` (lost when `bun add` populated it, present in the setup guide's example); (2) `packages/contracts/package.json` had no `main`/`types` field at all — a latent gap since Step 1 that only became a visible error once a second package (`web`, alongside `sdk`) started importing from it
+- [x] Component tests too, not just E2E — `@testing-library/react` + `happy-dom` (same scoped-`bunfig.toml` pattern as `packages/sdk`). Found two real bugs in the tests themselves while writing them: `<Link>` needs actual `RouterProvider` context to render (a bare `QueryClientProvider` wrapper threw), and `findByText` throws instead of returning falsy when nothing matches (need `queryByText` for "should NOT be present" assertions)
+- [x] **Full end-to-end verification through all four services**: real project, real `curl` matching `mvp.md` §3's exact golden scenario, confirmed by reading the actual server-rendered HTML from the running dashboard — both the issue list and issue detail pages, real data, no gaps
+- [x] CI: `apps/web` gets its own scoped test step (same root-vs-nested `bunfig.toml` limitation from Step 3)
 
-**Milestone:** the backend half of `mvp.md` §3's golden scenario is now real, verified end to end — error → captured → grouped → queryable. What's left is putting it in front of a human: the dashboard.
+**Milestone: Step 6 is done. `mvp.md` §3's golden scenario is now real, end to end** — a browser error becomes a queryable, visible issue in a real dashboard, verified with real services and real HTTP requests at every layer, not simulated. This closes the MVP build-gate slice from `mvp.md` §1.
 
 ---
 

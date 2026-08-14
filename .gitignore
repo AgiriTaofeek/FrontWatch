@@ -5,3 +5,10 @@ node_modules/
 bin/
 *.test
 *.out
+
+# TanStack Start / Vite build output — routeTree.gen.ts is
+# regenerated from the routes/ directory on every dev/build run.
+apps/web/src/routeTree.gen.ts
+apps/web/.output/
+apps/web/.vinxi/
+apps/web/dist/
