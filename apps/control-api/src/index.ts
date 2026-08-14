@@ -1,6 +1,7 @@
 import { Elysia } from "elysia";
 import { issuesRoutes } from "./routes/issues";
 import { networkRoutes } from "./routes/network";
+import { performanceRoutes } from "./routes/performance";
 import { projectsRoutes } from "./routes/projects";
 import { sessionsRoutes } from "./routes/sessions";
 
@@ -15,6 +16,7 @@ export const app = new Elysia({ prefix: "/api/v1" })
 	.use(issuesRoutes)
 	.use(networkRoutes)
 	.use(sessionsRoutes)
+	.use(performanceRoutes)
 	.listen(3000);
 
 console.log(

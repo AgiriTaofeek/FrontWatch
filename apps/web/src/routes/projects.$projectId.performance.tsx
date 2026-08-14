@@ -1,15 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { SessionList } from "../features/sessions/SessionList";
+import { PerformanceList } from "../features/performance/PerformanceList";
 
-export const Route = createFileRoute("/projects/$projectId/sessions")({
-	component: SessionsPage,
+export const Route = createFileRoute("/projects/$projectId/performance")({
+	component: PerformancePage,
 });
 
-function SessionsPage() {
+function PerformancePage() {
 	const { projectId } = Route.useParams();
 	return (
 		<div>
-			<h1>Sessions</h1>
+			<h1>Performance</h1>
 			<nav>
 				<Link to="/projects/$projectId/issues" params={{ projectId }}>
 					Issues
@@ -17,11 +17,11 @@ function SessionsPage() {
 				<Link to="/projects/$projectId/network" params={{ projectId }}>
 					Network
 				</Link>{" "}
-				<Link to="/projects/$projectId/performance" params={{ projectId }}>
-					Performance
+				<Link to="/projects/$projectId/sessions" params={{ projectId }}>
+					Sessions
 				</Link>
 			</nav>
-			<SessionList projectId={projectId} />
+			<PerformanceList projectId={projectId} />
 		</div>
 	);
 }

@@ -16,6 +16,9 @@ function IssuesPage() {
 				</Link>{" "}
 				<Link to="/projects/$projectId/sessions" params={{ projectId }}>
 					Sessions
+				</Link>{" "}
+				<Link to="/projects/$projectId/performance" params={{ projectId }}>
+					Performance
 				</Link>
 			</nav>
 			<IssueList projectId={projectId} />
