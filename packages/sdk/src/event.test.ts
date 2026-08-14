@@ -1,6 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import type { Context } from "./context";
-import { createErrorEvent, createNetworkEvent } from "./event";
+import {
+	createErrorEvent,
+	createNetworkEvent,
+	createPerformanceEvent,
+} from "./event";
 
 const context: Context = { sessionId: "sess_1" };
 
@@ -53,6 +57,27 @@ describe("createNetworkEvent", () => {
 		if (event.eventType === "network") {
 			expect(event.payload.resource).toBe("/api/users/:id");
 			expect(event.payload.outcome).toBe("success");
+		}
+	});
+});
+
+describe("createPerformanceEvent", () => {
+	it("builds a performance event with the discriminant set correctly", () => {
+		const event = createPerformanceEvent(
+			{
+				metricName: "LCP",
+				value: 1800,
+				rating: "good",
+				navigationType: "navigate",
+			},
+			context,
+		);
+
+		expect(event.eventType).toBe("performance");
+		if (event.eventType === "performance") {
+			expect(event.payload.metricName).toBe("LCP");
+			expect(event.payload.value).toBe(1800);
+			expect(event.payload.rating).toBe("good");
 		}
 	});
 });

@@ -3,9 +3,11 @@ import { buildContext, type SdkConfig } from "./context";
 import {
 	createErrorEvent,
 	createNetworkEvent,
+	createPerformanceEvent,
 	type ErrorPayload,
 	type FrontwatchEvent,
 	type NetworkPayload,
+	type PerformancePayload,
 } from "./event";
 import { applyPrivacy } from "./privacy";
 import { Transport } from "./transport";
@@ -60,6 +62,16 @@ export class Client {
 		}
 		const context = buildContext(this.config);
 		this.recordEvent(createNetworkEvent(payload, context));
+	}
+
+	// Same automatic-only reasoning as captureNetworkEvent — used only
+	// by performance.ts.
+	capturePerformanceEvent(payload: PerformancePayload): void {
+		if (!this.enabled) {
+			return;
+		}
+		const context = buildContext(this.config);
+		this.recordEvent(createPerformanceEvent(payload, context));
 	}
 
 	// Shared by both capture methods above — now that there's a second
@@ -134,4 +146,13 @@ export function captureException(error: unknown, handled = true): void {
 // way a one-off manual captureException() call before init() isn't.
 export function captureNetworkEvent(payload: NetworkPayload): void {
 	client?.captureNetworkEvent(payload);
+}
+
+// Same reasoning as captureNetworkEvent — web-vitals' callbacks fire
+// automatically, well before a developer would ever have a chance to
+// call init() first in some edge cases (e.g. TTFB can report very
+// early in the page lifecycle); a warning here would too often just be
+// noise about normal timing, not a real misconfiguration.
+export function capturePerformanceEvent(payload: PerformancePayload): void {
+	client?.capturePerformanceEvent(payload);
 }

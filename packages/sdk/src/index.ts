@@ -5,9 +5,11 @@ import {
 } from "./client";
 import { registerErrorInstrumentation } from "./errors";
 import { registerNetworkInstrumentation } from "./network";
+import { registerPerformanceInstrumentation } from "./performance";
 
 export { registerErrorInstrumentation } from "./errors";
 export { registerNetworkInstrumentation } from "./network";
+export { registerPerformanceInstrumentation } from "./performance";
 export { captureException };
 
 // core-architecture.md lists "register instrumentation" as one of
@@ -32,6 +34,7 @@ export function init(options: InitOptions) {
 	if (!instrumentationRegistered) {
 		registerErrorInstrumentation();
 		registerNetworkInstrumentation({ ignoreUrlPrefix: options.endpoint });
+		registerPerformanceInstrumentation();
 		instrumentationRegistered = true;
 	}
 

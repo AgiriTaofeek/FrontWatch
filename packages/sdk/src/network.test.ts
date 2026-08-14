@@ -15,6 +15,7 @@ const captureNetworkEventMock = mock((_payload: NetworkPayload) => {});
 mock.module("./client", () => ({
 	captureException: mock(() => {}),
 	captureNetworkEvent: captureNetworkEventMock,
+	capturePerformanceEvent: mock(() => {}),
 }));
 
 const { normalizeResource, registerNetworkInstrumentation } = await import(

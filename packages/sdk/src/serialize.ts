@@ -33,6 +33,19 @@ export function toWireEvent(event: FrontwatchEvent): WireEvent {
 		};
 	}
 
+	if (event.eventType === "performance") {
+		return {
+			...base,
+			event_type: "performance",
+			payload: {
+				metric_name: event.payload.metricName,
+				value: event.payload.value,
+				rating: event.payload.rating,
+				navigation_type: event.payload.navigationType,
+			},
+		};
+	}
+
 	return {
 		...base,
 		event_type: "error",
