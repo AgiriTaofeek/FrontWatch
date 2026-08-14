@@ -26,7 +26,9 @@
 | [020](ADR-020-drizzle-bun-sql.md) | Drizzle ORM (bun-sql driver) for the control plane | Accepted |
 | [021](ADR-021-uuid-primary-keys.md) | UUID primary keys for control-plane entities | Accepted |
 | [022](ADR-022-ingestion-postgres-access.md) | Go ingestion reads Postgres directly (read-only) | Accepted — resolves an explicitly open question in code-structure.md |
+| [023](ADR-023-derived-issue-aggregation.md) | Issues derived by query, not a materialized table | Accepted |
+| [024](ADR-024-tanstack-start-dashboard.md) | TanStack Start for the dashboard | Accepted — resolves tech-stack.md's open frontend-router question |
 
 ## Genuinely still open (not yet an ADR)
 
-Carried over from the legacy architecture register, still accurate as of this writing: cache/ephemeral-state technology beyond the Valkey candidate in `05-architecture/tech-stack.md` (not yet load-tested), object storage vendor specifics, exact SDK package/module structure, exact frontend routing framework choice, and the self-hosted packaging format beyond Helm (e.g. an installer/CLI). These should become ADRs once resolved through technical evaluation and benchmarking — see the physical-model checklist in `05-architecture/data-model.md` §12 for what needs measuring first.
+Carried over from the legacy architecture register, still accurate as of this writing: cache/ephemeral-state technology beyond the Valkey candidate in `05-architecture/tech-stack.md` (not yet load-tested), object storage vendor specifics, exact SDK package/module structure, and the self-hosted packaging format beyond Helm (e.g. an installer/CLI). These should become ADRs once resolved through technical evaluation and benchmarking — see the physical-model checklist in `05-architecture/data-model.md` §12 for what needs measuring first.

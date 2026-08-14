@@ -32,12 +32,12 @@ export const projectsRoutes = new Elysia({ prefix: "/projects" })
 		},
 	)
 	.get(
-		"/:id",
+		"/:projectId",
 		async ({ params, status }) => {
 			const [project] = await db
 				.select()
 				.from(projects)
-				.where(eq(projects.id, params.id));
+				.where(eq(projects.id, params.projectId));
 
 			if (!project) {
 				return status(404, { error: "project not found" });
@@ -47,7 +47,13 @@ export const projectsRoutes = new Elysia({ prefix: "/projects" })
 		},
 		{
 			params: t.Object({
-				id: t.String({ format: "uuid" }),
+				// Named to match issues.ts's /projects/:projectId/issues —
+				// Elysia's router (memoirist) rejects two different
+				// parameter names at the same URL position across merged
+				// route trees. Found by actually starting the composed
+				// app (index.ts), not by either route file's isolated
+				// tests, which each only ever loaded one module alone.
+				projectId: t.String({ format: "uuid" }),
 			}),
 		},
 	);

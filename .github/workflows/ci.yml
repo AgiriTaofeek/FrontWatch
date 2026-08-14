@@ -26,8 +26,34 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 5
+      # control-api's issue queries (Step 6) read ClickHouse directly —
+      # this job's Postgres/ClickHouse are isolated from the Go job's
+      # (separate runners, no shared state), so both need migrating
+      # independently even though the schema is identical.
+      clickhouse:
+        image: clickhouse/clickhouse-server:24.8
+        env:
+          CLICKHOUSE_USER: frontwatch
+          CLICKHOUSE_PASSWORD: frontwatch_dev
+          CLICKHOUSE_DB: frontwatch
+        ports:
+          - 8123:8123
+          # golang-migrate's ClickHouse driver connects via the native
+          # protocol (9000), not HTTP — control-api's own runtime
+          # queries use 8123, but the migration step below needs this
+          # too. Both need exposing.
+          - 9000:9000
+        options: >-
+          --health-cmd "wget --spider -q http://localhost:8123/ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
     env:
       DATABASE_URL: postgres://frontwatch:frontwatch_dev@localhost:5432/frontwatch
+      CLICKHOUSE_HTTP_ADDR: localhost:8123
+      CLICKHOUSE_USERNAME: frontwatch
+      CLICKHOUSE_PASSWORD: frontwatch_dev
+      CLICKHOUSE_DATABASE: frontwatch
     steps:
       - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
@@ -37,9 +63,21 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Biome (lint + format check)
         run: bunx --bun @biomejs/biome ci .
-      - name: Run DB migrations
+      - name: Run Postgres migrations
         working-directory: apps/control-api
         run: bunx drizzle-kit migrate
+      # golang-migrate is the one tool this project uses for ClickHouse
+      # schema (services/data-plane/migrations/clickhouse) — reused
+      # here rather than duplicated, even though this is otherwise the
+      # TS job, since the schema itself is the Go side's to own.
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: services/data-plane/go.mod
+      - name: Run ClickHouse migrations
+        run: |
+          go install -tags 'clickhouse' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.19.1
+          migrate -database "clickhouse://localhost:9000?username=frontwatch&password=frontwatch_dev&database=frontwatch&x-multi-statement=true" \
+            -path services/data-plane/migrations/clickhouse up
       - name: Run control-api tests
         working-directory: apps/control-api
         run: bun test

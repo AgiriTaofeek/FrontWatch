@@ -112,12 +112,19 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done
 
 ## Step 6 — Error investigation *(closes the MVP build-gate slice)*
 
-- [ ] Issue grouping
-- [ ] Issue API (Bun control plane)
+- [x] ADR-023: issues derived by query (`GROUP BY project_id, fingerprint` over `events`), no separate materialized table — resolves the Step 5 deferral. Resolution state (`E11.03`) explicitly out of scope, not in `PROGRESS.md`'s original Step 6 list or `mvp.md`'s golden scenario
+- [x] ADR-024: TanStack Start for `apps/web` — resolves `tech-stack.md`'s open frontend-router question, also doubles as SDK dogfooding (Tier 1 adapter target)
+- [x] Issue grouping — `apps/control-api/src/db/issues.ts`, the ADR-023 aggregation queries (`listIssues`, `getIssue`), verified against `@clickhouse/client` v1.23.1 (works fine under Bun)
+- [x] Issue API (Bun control plane) — `GET /api/v1/projects/:projectId/issues`, `GET /api/v1/issues/:issueId`. **Deviation from api-contracts.md** (tracked, not silent): documented as `/applications/{id}/issues`, built as project-scoped instead — `Application` isn't a real entity yet (Step 2's nullable-FK shortcut), `project_id` is what `events` is actually keyed by
+- [x] **Also fixed while wiring this up**: every control-plane route lacked the `/api/v1` prefix `api-contracts.md` documents (ingestion already had `/ingest/v1/`, this side never got the equivalent) — fixed at composition time in `index.ts`, not per route file, so route-level tests keep testing unprefixed paths directly
+- [x] **Real bug caught only by starting the actual composed server**, not by either route file's isolated tests: Elysia's router rejects two different parameter names (`id` vs `projectId`) at the same URL position across merged route trees — `projects.ts`'s `/projects/:id` renamed to `/projects/:projectId` for consistency with `issues.ts`
+- [x] **Real format gap caught by testing**: ClickHouse's `DateTime64` via JSONEachRow insert wants its own `YYYY-MM-DD HH:MM:SS.mmm` string format, not ISO-8601 with `T`/`Z` — didn't surface in Step 5 because Go's client uses the binary native protocol, not string parsing
+- [x] **Full end-to-end verification through all three services**: real project created, ingestion + worker + control-api all started for real, a `curl` request matching `mvp.md` §3's exact golden scenario (release `4.2.0`, route `/transfer`) sent through ingestion → Redpanda → worker → ClickHouse → confirmed visible via the real issue list and issue detail endpoints
+- [x] CI: added ClickHouse to the TS job too (separate runner from the Go job, needs its own migrated instance) — the migration step there needs `golang-migrate` (Go-based) even though it's nominally the "TypeScript" job, since that's the one tool this project uses for ClickHouse schema
 - [ ] Dashboard issue list
 - [ ] Dashboard issue detail
 
-**Milestone:** once this works end to end, `mvp.md` §3's golden scenario is real — an actual error, captured, grouped, and visible in a dashboard.
+**Milestone:** the backend half of `mvp.md` §3's golden scenario is now real, verified end to end — error → captured → grouped → queryable. What's left is putting it in front of a human: the dashboard.
 
 ---
 
@@ -157,4 +164,4 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done
 
 ## Deviations log
 
-*(Empty so far — record here whenever the actual build order or scope diverges from the plan above, with a one-line reason.)*
+- **2026-08-14, Step 6**: Issue list endpoint built as `GET /api/v1/projects/:projectId/issues` instead of `api-contracts.md`'s documented `GET /api/v1/applications/{id}/issues`. Reason: `Application` isn't a real entity yet (Step 2's deliberate nullable-FK shortcut on `projects`), and `project_id` is what `events` in ClickHouse is actually keyed by. Revisit once `Application` is real (not currently scheduled).
