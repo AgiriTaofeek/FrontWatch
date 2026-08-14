@@ -74,3 +74,69 @@ func TestLoad(t *testing.T) {
 		}
 	})
 }
+
+func setWorkerEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("REDPANDA_BROKERS", "localhost:9092")
+	t.Setenv("CLICKHOUSE_ADDR", "localhost:9000")
+	t.Setenv("CLICKHOUSE_DATABASE", "frontwatch")
+	t.Setenv("CLICKHOUSE_USERNAME", "frontwatch")
+	t.Setenv("CLICKHOUSE_PASSWORD", "frontwatch_dev")
+}
+
+func TestLoadWorkerConfig(t *testing.T) {
+	t.Run("loads a valid worker config", func(t *testing.T) {
+		setWorkerEnv(t)
+
+		cfg, err := LoadWorkerConfig()
+		if err != nil {
+			t.Fatalf("LoadWorkerConfig() = %v, want nil", err)
+		}
+		if cfg.DatabaseURL != "" {
+			t.Errorf("DatabaseURL = %q, want empty — the worker never touches Postgres", cfg.DatabaseURL)
+		}
+		if cfg.ClickHouseAddr != "localhost:9000" {
+			t.Errorf("ClickHouseAddr = %q, want %q", cfg.ClickHouseAddr, "localhost:9000")
+		}
+	})
+
+	t.Run("fails clearly without REDPANDA_BROKERS", func(t *testing.T) {
+		setWorkerEnv(t)
+		t.Setenv("REDPANDA_BROKERS", "")
+
+		_, err := LoadWorkerConfig()
+		if !errors.Is(err, ErrMissingRedpandaBrokers) {
+			t.Fatalf("LoadWorkerConfig() = %v, want error wrapping %v", err, ErrMissingRedpandaBrokers)
+		}
+	})
+
+	t.Run("fails clearly without CLICKHOUSE_ADDR", func(t *testing.T) {
+		setWorkerEnv(t)
+		t.Setenv("CLICKHOUSE_ADDR", "")
+
+		_, err := LoadWorkerConfig()
+		if !errors.Is(err, ErrMissingClickHouseAddr) {
+			t.Fatalf("LoadWorkerConfig() = %v, want error wrapping %v", err, ErrMissingClickHouseAddr)
+		}
+	})
+
+	t.Run("fails clearly without CLICKHOUSE_DATABASE", func(t *testing.T) {
+		setWorkerEnv(t)
+		t.Setenv("CLICKHOUSE_DATABASE", "")
+
+		_, err := LoadWorkerConfig()
+		if !errors.Is(err, ErrMissingClickHouseDatabase) {
+			t.Fatalf("LoadWorkerConfig() = %v, want error wrapping %v", err, ErrMissingClickHouseDatabase)
+		}
+	})
+
+	t.Run("fails clearly without credentials", func(t *testing.T) {
+		setWorkerEnv(t)
+		t.Setenv("CLICKHOUSE_USERNAME", "")
+
+		_, err := LoadWorkerConfig()
+		if !errors.Is(err, ErrMissingClickHouseCredentials) {
+			t.Fatalf("LoadWorkerConfig() = %v, want error wrapping %v", err, ErrMissingClickHouseCredentials)
+		}
+	})
+}

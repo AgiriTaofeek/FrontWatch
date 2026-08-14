@@ -68,9 +68,33 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 5
+      # Unlike Redpanda, no custom startup command needed here — the
+      # official image handles auth purely through env vars in its own
+      # entrypoint, so services: works fine (confirmed locally: without
+      # these, the image explicitly disables network access for the
+      # 'default' user entirely — see infra/local/docker-compose.yml's
+      # comment for the full story).
+      clickhouse:
+        image: clickhouse/clickhouse-server:24.8
+        env:
+          CLICKHOUSE_USER: frontwatch
+          CLICKHOUSE_PASSWORD: frontwatch_dev
+          CLICKHOUSE_DB: frontwatch
+        ports:
+          - 8123:8123
+          - 9000:9000
+        options: >-
+          --health-cmd "wget --spider -q http://localhost:8123/ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
     env:
       DATABASE_URL: postgres://frontwatch:frontwatch_dev@localhost:5432/frontwatch
       REDPANDA_BROKERS: localhost:9092
+      CLICKHOUSE_ADDR: localhost:9000
+      CLICKHOUSE_DATABASE: frontwatch
+      CLICKHOUSE_USERNAME: frontwatch
+      CLICKHOUSE_PASSWORD: frontwatch_dev
     defaults:
       run:
         working-directory: services/data-plane
@@ -130,5 +154,10 @@ jobs:
           echo "Redpanda did not become healthy in time" >&2
           docker logs redpanda
           exit 1
+      - name: Run ClickHouse migrations
+        run: |
+          go install -tags 'clickhouse' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.19.1
+          migrate -database "clickhouse://localhost:9000?username=frontwatch&password=frontwatch_dev&database=frontwatch&x-multi-statement=true" \
+            -path migrations/clickhouse up
       - name: Test
         run: go test ./...
