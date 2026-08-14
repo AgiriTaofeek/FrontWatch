@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { clickhouse } from "./clickhouse";
-import { getIssue, listIssues, parseIssueId } from "./issues";
+import { getIssue, listIssues, listNewIssues, parseIssueId } from "./issues";
 
 // Integration test — hits the real local ClickHouse. Inserts test rows
 // directly (the write path is already proven end-to-end in Step 5 —
@@ -101,6 +101,55 @@ describe("listIssues / getIssue (ADR-023 aggregation)", () => {
 		// ask "issues that happened on release 1.0.0" and still see the
 		// issue's full occurrence count, not a filtered count).
 		expect(issues).toHaveLength(1);
+	});
+});
+
+describe("listNewIssues (Step 8's alert-evaluator)", () => {
+	it("only returns issues whose first_seen_at is on or after `since`", async () => {
+		// The fingerprint above (first seen 2026-08-14 10:00:00) predates
+		// this `since` boundary, so it must not be treated as "new."
+		const since = new Date("2026-08-14T10:30:00.000Z");
+		const newIssues = await listNewIssues(projectId, since);
+		expect(newIssues.some((issue) => issue.fingerprint === fingerprint)).toBe(
+			false,
+		);
+	});
+
+	it("returns an issue whose first_seen_at is on or after `since`", async () => {
+		const newFingerprint = `test_new_fp_${Date.now()}`;
+		const eventId = `evt_new_${Date.now()}`;
+		insertedEventIds.push(eventId);
+		await clickhouse.insert({
+			table: "events",
+			values: [
+				{
+					event_id: eventId,
+					project_id: projectId,
+					event_type: "error",
+					schema_version: 1,
+					client_timestamp: "2026-08-14 12:00:00.000",
+					server_received_at: "2026-08-14 12:00:00.000",
+					release: "",
+					session_id: "",
+					route: "",
+					fingerprint: newFingerprint,
+					fingerprint_version: 1,
+					payload: JSON.stringify({
+						message: "A brand new failure",
+						exception_type: "RangeError",
+						handled: false,
+					}),
+				},
+			],
+			format: "JSONEachRow",
+		});
+
+		const since = new Date("2026-08-14T11:00:00.000Z");
+		const newIssues = await listNewIssues(projectId, since);
+
+		expect(newIssues).toHaveLength(1);
+		expect(newIssues[0]?.fingerprint).toBe(newFingerprint);
+		expect(newIssues[0]?.title).toBe("A brand new failure");
 	});
 });
 

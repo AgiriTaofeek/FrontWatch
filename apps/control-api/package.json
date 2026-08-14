@@ -2,6 +2,7 @@
 	"name": "@frontwatch/control-api",
 	"scripts": {
 		"dev": "bun --watch src/index.ts",
+		"alert-evaluator": "bun --watch src/alertEvaluator.ts",
 		"test": "bun test"
 	},
 	"dependencies": {
