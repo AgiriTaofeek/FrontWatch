@@ -88,6 +88,9 @@ jobs:
         # root). Each package's tests run from inside that package.
         working-directory: packages/sdk
         run: bun test
+      - name: Run web tests
+        working-directory: apps/web
+        run: bun test
 
   go:
     name: Go data-plane

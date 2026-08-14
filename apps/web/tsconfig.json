@@ -1,0 +1,9 @@
+{
+	"extends": "../../packages/config/tsconfig.base.json",
+	"compilerOptions": {
+		"jsx": "react-jsx",
+		"target": "ES2022",
+		"types": ["vite/client"]
+	},
+	"include": ["src", "*.ts"]
+}

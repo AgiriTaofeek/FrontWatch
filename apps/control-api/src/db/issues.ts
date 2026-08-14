@@ -1,3 +1,8 @@
+import type {
+	IssueDetail,
+	IssueSummary,
+	OccurrenceSummary,
+} from "@frontwatch/contracts";
 import { clickhouse } from "./clickhouse";
 
 // ADR-023: issues are derived by GROUP BY over the events table (Go's
@@ -6,18 +11,11 @@ import { clickhouse } from "./clickhouse";
 // this API is "{projectId}:{fingerprint}" so /issues/:id is
 // self-describing (project scope + fingerprint, no separate query
 // param needed).
-
-export interface IssueSummary {
-	issueId: string;
-	fingerprint: string;
-	title: string;
-	exceptionType: string;
-	occurrenceCount: number;
-	firstSeenAt: string;
-	lastSeenAt: string;
-	latestRelease: string | null;
-	latestRoute: string | null;
-}
+//
+// Response shapes (IssueSummary/IssueDetail/OccurrenceSummary) live in
+// packages/contracts, shared with apps/web — same lesson Step 4 already
+// learned the hard way with the SDK/ingestion wire contract: one
+// definition, not two that can quietly drift apart.
 
 interface IssueRow {
 	fingerprint: string;
@@ -121,18 +119,6 @@ export async function listIssues(
 	return rows.map((row) => toSummary(projectId, row));
 }
 
-export interface OccurrenceSummary {
-	eventId: string;
-	occurredAt: string;
-	release: string | null;
-	route: string | null;
-	sessionId: string | null;
-}
-
-export interface IssueDetail extends IssueSummary {
-	recentOccurrences: OccurrenceSummary[];
-}
-
 interface OccurrenceRow {
 	event_id: string;
 	occurred_at: string;
@@ -187,16 +173,15 @@ export async function getIssue(
 		return null;
 	}
 
-	return {
-		...toSummary(projectId, summary),
-		recentOccurrences: occurrenceRows.map((row) => ({
-			eventId: row.event_id,
-			occurredAt: row.occurred_at,
-			release: row.release || null,
-			route: row.route || null,
-			sessionId: row.session_id || null,
-		})),
-	};
+	const recentOccurrences: OccurrenceSummary[] = occurrenceRows.map((row) => ({
+		eventId: row.event_id,
+		occurredAt: row.occurred_at,
+		release: row.release || null,
+		route: row.route || null,
+		sessionId: row.session_id || null,
+	}));
+
+	return { ...toSummary(projectId, summary), recentOccurrences };
 }
 
 export function parseIssueId(
