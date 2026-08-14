@@ -4,13 +4,13 @@
 // names are snake_case because that's the literal wire format, not a
 // TypeScript convention choice.
 //
-// Two event types now (error, network) — a real discriminated union
-// instead of a single flat payload type, per Step 4's own comment that
-// this should happen "when a second event_type is real."
-// performance/breadcrumb get added the same way, alongside their
-// instrumentation modules, not speculatively now.
+// Three event types now (error, network, performance) — a real
+// discriminated union instead of a single flat payload type, per Step
+// 4's own comment that this should happen "when a second event_type is
+// real." breadcrumb gets added the same way, alongside its
+// instrumentation module, not speculatively now.
 
-export type WireEventType = "error" | "network";
+export type WireEventType = "error" | "network" | "performance";
 
 export interface WireErrorPayload {
 	message: string;
@@ -34,6 +34,18 @@ export interface WireNetworkPayload {
 	outcome: "success" | "failure";
 }
 
+// instrumentation.md §Performance's first five metrics. Mirrors
+// web-vitals' own Metric shape (name/value/rating/navigationType) —
+// packages/sdk/src/performance.ts is a thin adapter over that library,
+// not a reimplementation, so the wire shape follows it directly rather
+// than inventing a parallel vocabulary.
+export interface WirePerformancePayload {
+	metric_name: "CLS" | "FCP" | "INP" | "LCP" | "TTFB";
+	value: number;
+	rating: "good" | "needs-improvement" | "poor";
+	navigation_type: string;
+}
+
 export interface WireClient {
 	browser?: string;
 	browser_version?: string;
@@ -55,7 +67,11 @@ interface WireEventBase {
 
 export type WireEvent =
 	| (WireEventBase & { event_type: "error"; payload: WireErrorPayload })
-	| (WireEventBase & { event_type: "network"; payload: WireNetworkPayload });
+	| (WireEventBase & { event_type: "network"; payload: WireNetworkPayload })
+	| (WireEventBase & {
+			event_type: "performance";
+			payload: WirePerformancePayload;
+	  });
 
 export interface IngestRequest {
 	schema_version: 1;

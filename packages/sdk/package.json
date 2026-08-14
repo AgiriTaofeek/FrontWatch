@@ -6,7 +6,8 @@
 		"test": "bun test"
 	},
 	"dependencies": {
-		"@frontwatch/contracts": "workspace:*"
+		"@frontwatch/contracts": "workspace:*",
+		"web-vitals": "6.1.0"
 	},
 	"devDependencies": {
 		"@happy-dom/global-registrator": "20.0.10"
