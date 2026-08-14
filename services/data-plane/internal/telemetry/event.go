@@ -7,24 +7,32 @@
 package telemetry
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 )
 
-// EventType is a closed set for now — only "error" exists, matching
-// packages/sdk and packages/contracts. Extending this to
-// network/performance/breadcrumb happens alongside their instrumentation
-// modules, not speculatively ahead of them.
+// EventType is now a real two-member set — packages/sdk's network
+// instrumentation (Step 7) made "network" real, matching this package's
+// own earlier note that said to extend this when that happened.
+// performance/breadcrumb stay unadded until their instrumentation
+// modules exist, same reasoning.
 type EventType string
 
-const EventTypeError EventType = "error"
+const (
+	EventTypeError   EventType = "error"
+	EventTypeNetwork EventType = "network"
+)
 
 var (
 	ErrMissingEventID    = errors.New("event_id is required")
 	ErrUnsupportedType   = errors.New("unsupported event_type")
 	ErrMissingTimestamp  = errors.New("timestamp is required")
 	ErrMissingMessage    = errors.New("payload.message is required")
+	ErrMissingMethod     = errors.New("payload.method is required")
+	ErrMissingResource   = errors.New("payload.resource is required")
+	ErrMissingPayload    = errors.New("payload is required")
 	ErrUnsupportedSchema = errors.New("unsupported schema_version")
 )
 
@@ -38,21 +46,119 @@ type ErrorPayload struct {
 	Handled       bool   `json:"handled"`
 }
 
-// Event is a single decoded telemetry event. Payload is a concrete
-// ErrorPayload, not a generic/union type — there's only one event_type
-// right now, and building polymorphic payload handling for types that
-// don't exist yet would be exactly the kind of speculative abstraction
-// services.md warns against for repositories. Revisit when a second
-// event_type is real.
+// NetworkPayload mirrors packages/contracts' WireNetworkPayload.
+type NetworkPayload struct {
+	Method     string  `json:"method"`
+	Resource   string  `json:"resource"`
+	Status     int     `json:"status"`
+	DurationMs float64 `json:"duration_ms"`
+	Outcome    string  `json:"outcome"`
+}
+
+// Event is a single decoded telemetry event. Payload is now a real
+// discriminated shape — exactly one of ErrorPayload/NetworkPayload is
+// set, chosen by EventType — mirroring packages/contracts' WireEvent
+// union on the TS side. A plain `any`/interface{} field was considered
+// and rejected: it would push every consumer (Validate, the fingerprint
+// step, the ClickHouse writer) back into runtime type assertions this
+// struct can rule out instead. Both fields carry `json:"-"`; Event's own
+// MarshalJSON/UnmarshalJSON own the wire "payload" key, since encoding/
+// json can't pick a struct type from a sibling field on its own.
 type Event struct {
-	EventID       string       `json:"event_id"`
-	EventType     EventType    `json:"event_type"`
-	SchemaVersion int          `json:"schema_version"`
-	Timestamp     time.Time    `json:"timestamp"`
-	Release       string       `json:"release,omitempty"`
-	SessionID     string       `json:"session_id,omitempty"`
-	Route         string       `json:"route,omitempty"`
-	Payload       ErrorPayload `json:"payload"`
+	EventID        string          `json:"event_id"`
+	EventType      EventType       `json:"event_type"`
+	SchemaVersion  int             `json:"schema_version"`
+	Timestamp      time.Time       `json:"timestamp"`
+	Release        string          `json:"release,omitempty"`
+	SessionID      string          `json:"session_id,omitempty"`
+	Route          string          `json:"route,omitempty"`
+	ErrorPayload   *ErrorPayload   `json:"-"`
+	NetworkPayload *NetworkPayload `json:"-"`
+}
+
+// eventWire is Event's wire shape — same fields, but a single untyped
+// Payload so MarshalJSON/UnmarshalJSON can share one struct definition
+// instead of drifting apart in two places.
+type eventWire struct {
+	EventID       string          `json:"event_id"`
+	EventType     EventType       `json:"event_type"`
+	SchemaVersion int             `json:"schema_version"`
+	Timestamp     time.Time       `json:"timestamp"`
+	Release       string          `json:"release,omitempty"`
+	SessionID     string          `json:"session_id,omitempty"`
+	Route         string          `json:"route,omitempty"`
+	Payload       json.RawMessage `json:"payload"`
+}
+
+func (e Event) MarshalJSON() ([]byte, error) {
+	payload, err := e.PayloadJSON()
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(eventWire{
+		EventID:       e.EventID,
+		EventType:     e.EventType,
+		SchemaVersion: e.SchemaVersion,
+		Timestamp:     e.Timestamp,
+		Release:       e.Release,
+		SessionID:     e.SessionID,
+		Route:         e.Route,
+		Payload:       payload,
+	})
+}
+
+func (e *Event) UnmarshalJSON(data []byte) error {
+	var wire eventWire
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+
+	e.EventID = wire.EventID
+	e.EventType = wire.EventType
+	e.SchemaVersion = wire.SchemaVersion
+	e.Timestamp = wire.Timestamp
+	e.Release = wire.Release
+	e.SessionID = wire.SessionID
+	e.Route = wire.Route
+	e.ErrorPayload = nil
+	e.NetworkPayload = nil
+
+	// Unknown event_types decode with no payload attached — Validate()
+	// is what actually rejects them; decoding itself stays permissive so
+	// a malformed/future event_type still produces a usable Event for
+	// error reporting, not a hard decode failure.
+	switch wire.EventType {
+	case EventTypeNetwork:
+		var payload NetworkPayload
+		if len(wire.Payload) > 0 {
+			if err := json.Unmarshal(wire.Payload, &payload); err != nil {
+				return fmt.Errorf("decoding network payload: %w", err)
+			}
+		}
+		e.NetworkPayload = &payload
+	case EventTypeError:
+		var payload ErrorPayload
+		if len(wire.Payload) > 0 {
+			if err := json.Unmarshal(wire.Payload, &payload); err != nil {
+				return fmt.Errorf("decoding error payload: %w", err)
+			}
+		}
+		e.ErrorPayload = &payload
+	}
+
+	return nil
+}
+
+// PayloadJSON marshals whichever payload EventType selects — the one
+// place that switch lives, shared by MarshalJSON and the ClickHouse
+// writer (which stores the payload as a raw JSON string column).
+func (e Event) PayloadJSON() ([]byte, error) {
+	switch e.EventType {
+	case EventTypeNetwork:
+		return json.Marshal(e.NetworkPayload)
+	default:
+		return json.Marshal(e.ErrorPayload)
+	}
 }
 
 // Validate checks exactly the required fields api-contracts.md §4 names:
@@ -64,15 +170,32 @@ func (e Event) Validate() error {
 	if e.EventID == "" {
 		return ErrMissingEventID
 	}
-	if e.EventType != EventTypeError {
-		return fmt.Errorf("%w: %q", ErrUnsupportedType, e.EventType)
-	}
 	if e.Timestamp.IsZero() {
 		return ErrMissingTimestamp
 	}
-	if e.Payload.Message == "" {
-		return ErrMissingMessage
+
+	switch e.EventType {
+	case EventTypeError:
+		if e.ErrorPayload == nil {
+			return ErrMissingPayload
+		}
+		if e.ErrorPayload.Message == "" {
+			return ErrMissingMessage
+		}
+	case EventTypeNetwork:
+		if e.NetworkPayload == nil {
+			return ErrMissingPayload
+		}
+		if e.NetworkPayload.Method == "" {
+			return ErrMissingMethod
+		}
+		if e.NetworkPayload.Resource == "" {
+			return ErrMissingResource
+		}
+	default:
+		return fmt.Errorf("%w: %q", ErrUnsupportedType, e.EventType)
 	}
+
 	return nil
 }
 

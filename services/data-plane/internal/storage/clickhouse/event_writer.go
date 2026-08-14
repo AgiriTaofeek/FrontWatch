@@ -7,7 +7,6 @@ package clickhouse
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -56,7 +55,7 @@ type StoredEvent struct {
 }
 
 func (w *EventWriter) WriteEvent(ctx context.Context, e StoredEvent) error {
-	payload, err := json.Marshal(e.Event.Payload)
+	payload, err := e.Event.PayloadJSON()
 	if err != nil {
 		return fmt.Errorf("marshaling payload: %w", err)
 	}

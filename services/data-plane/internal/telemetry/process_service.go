@@ -40,10 +40,10 @@ func (s *ProcessEventService) Process(event Event) (ProcessedEvent, error) {
 	}
 
 	processed := ProcessedEvent{Event: event}
-	if event.EventType == EventTypeError {
+	if event.EventType == EventTypeError && event.ErrorPayload != nil {
 		processed.Fingerprint, processed.FingerprintVersion = s.fingerprinter.Fingerprint(
-			event.Payload.ExceptionType,
-			event.Payload.Message,
+			event.ErrorPayload.ExceptionType,
+			event.ErrorPayload.Message,
 		)
 	}
 
