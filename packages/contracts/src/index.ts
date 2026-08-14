@@ -1,4 +1,9 @@
 export type {
+	AlertRuleSummary,
+	AlertRuleType,
+	ListAlertRulesResponse,
+} from "./alertRules";
+export type {
 	IssueDetail,
 	IssueSummary,
 	ListIssuesResponse,

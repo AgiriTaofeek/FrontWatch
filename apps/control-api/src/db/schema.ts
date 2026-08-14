@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+	boolean,
 	pgEnum,
 	pgTable,
 	text,
@@ -88,5 +89,90 @@ export const releases = pgTable(
 		// release-health rows for what release-investigation.md's
 		// comparison view would otherwise show as two separate releases.
 		unique().on(table.projectId, table.version),
+	],
+);
+
+// Step 8's first Alerting slice (E13-alerts.md US-13.01/13.02): "new
+// issue" only — error_spike and performance_regression need real
+// threshold/window logic and are deferred to later chunks, not
+// forgotten. type is still a real enum (not a bare string) so those
+// later types slot in the same way EventType/WireEventType already
+// did in Step 7, rather than needing a schema migration to widen a
+// check later.
+export const alertRuleType = pgEnum("alert_rule_type", ["new_issue"]);
+
+// alert-investigation.md's own documented state machine (Triggered ->
+// Acknowledged -> Recovered -> Resolved) — the full enum is defined
+// now since Postgres enum widening is real migration friction, but
+// this slice's alert-worker only ever writes "triggered". The other
+// three states (and the transitions between them) are deferred to a
+// follow-up chunk, same "schema now, behavior later" reasoning
+// releases.deployedAt already used for Deployment.
+export const alertEventState = pgEnum("alert_event_state", [
+	"triggered",
+	"acknowledged",
+	"recovered",
+	"resolved",
+]);
+
+// US-13.01: "an authorized user can create a rule, the rule has a
+// condition and notification destination, rules can be enabled or
+// disabled." webhookUrl is the notification destination — the
+// simplest real delivery mechanism (no external service credentials
+// needed; Slack/email can consume a webhook later, same reasoning a
+// Sentry/PagerDuty-style tool would use for a first alerting slice).
+export const alertRules = pgTable("alert_rules", {
+	id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+
+	projectId: uuid("project_id")
+		.notNull()
+		.references(() => projects.id),
+
+	type: alertRuleType("type").notNull().default("new_issue"),
+	webhookUrl: text("webhook_url").notNull(),
+	enabled: boolean("enabled").notNull().default(true),
+
+	createdAt: timestamp("created_at", { withTimezone: true })
+		.notNull()
+		.defaultNow(),
+	updatedAt: timestamp("updated_at", { withTimezone: true })
+		.notNull()
+		.defaultNow(),
+});
+
+// One row per (rule, issue) firing — the alert-worker's own dedup
+// record (US-13.02: "repeated evaluations do not create uncontrolled
+// duplicate notifications"). fingerprint is the issue's stable
+// grouping key (Step 5's issue.Fingerprint), not a foreign key into
+// any Postgres table — issues are derived by ClickHouse GROUP BY
+// (ADR-023), there's no `issues` row to reference.
+export const alertEvents = pgTable(
+	"alert_events",
+	{
+		id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+
+		alertRuleId: uuid("alert_rule_id")
+			.notNull()
+			.references(() => alertRules.id),
+
+		fingerprint: text("fingerprint").notNull(),
+		state: alertEventState("state").notNull().default("triggered"),
+
+		triggeredAt: timestamp("triggered_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
+		// Null until the webhook POST actually succeeds — a failed
+		// delivery still gets recorded (so the dedup constraint below
+		// still prevents re-triggering on every poll), but stays
+		// distinguishable from a real, delivered notification.
+		notifiedAt: timestamp("notified_at", { withTimezone: true }),
+	},
+	(table) => [
+		// The actual dedup mechanism: the alert-worker's poll loop relies
+		// on this constraint (via onConflictDoNothing, same pattern
+		// releases' own duplicate-version handling already uses) to make
+		// "have we already alerted on this issue for this rule" an atomic
+		// database guarantee, not a check-then-insert race.
+		unique().on(table.alertRuleId, table.fingerprint),
 	],
 );
