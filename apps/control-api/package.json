@@ -5,6 +5,7 @@
 		"test": "bun test"
 	},
 	"dependencies": {
+		"@clickhouse/client": "^1.23.1",
 		"drizzle-orm": "^0.45.2",
 		"elysia": "^1.4.29"
 	},
