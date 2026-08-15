@@ -3,19 +3,31 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/AgiriTaofeek/FrontWatch/services/data-plane/internal/issue"
 	"github.com/AgiriTaofeek/FrontWatch/services/data-plane/internal/platform/config"
+	"github.com/AgiriTaofeek/FrontWatch/services/data-plane/internal/platform/health"
 	"github.com/AgiriTaofeek/FrontWatch/services/data-plane/internal/queue"
 	chstorage "github.com/AgiriTaofeek/FrontWatch/services/data-plane/internal/storage/clickhouse"
 	"github.com/AgiriTaofeek/FrontWatch/services/data-plane/internal/telemetry"
 )
+
+// defaultMetricsPort — the worker has never had an HTTP server before
+// (a pure consumer loop); ADR-026 gives it one now, purely for
+// /health/live, /health/ready, and /metrics, on its own port so it
+// never collides with ingestion's.
+const defaultMetricsPort = "8081"
 
 // fingerprinterAdapter satisfies telemetry.Fingerprinter — a one-line
 // wrapper, not a redundant interface: internal/telemetry must never
@@ -66,9 +78,44 @@ func main() {
 
 	service := telemetry.NewProcessEventService(fingerprinterAdapter{})
 
+	metricsServer := startMetricsServer(chConn, client)
+
 	log.Println("worker consuming from", queue.RawTelemetryTopic)
 	runLoop(ctx, client, service, writer)
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := metricsServer.Shutdown(shutdownCtx); err != nil {
+		log.Printf("metrics server shutdown failed: %v", err)
+	}
+
 	log.Println("worker shut down")
+}
+
+// startMetricsServer wires ADR-026's /health/live, /health/ready, and
+// /metrics onto their own HTTP server — the worker's first ever HTTP
+// endpoint, purely for observability, never for consuming events.
+func startMetricsServer(chConn driver.Conn, redpanda *kgo.Client) *http.Server {
+	mux := http.NewServeMux()
+	health.Register(mux, map[string]health.Checker{
+		"clickhouse": chConn.Ping,
+		"redpanda":   redpanda.Ping,
+	})
+	mux.Handle("GET /metrics", promhttp.Handler())
+
+	port := os.Getenv("WORKER_METRICS_PORT")
+	if port == "" {
+		port = defaultMetricsPort
+	}
+
+	server := &http.Server{Addr: ":" + port, Handler: mux}
+	go func() {
+		log.Printf("worker metrics listening on :%s", port)
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("metrics server: %v", err)
+		}
+	}()
+	return server
 }
 
 // runLoop is services.md's worker loop: receive → decode → validate →
@@ -103,7 +150,10 @@ func runLoop(ctx context.Context, client *kgo.Client, service *telemetry.Process
 		// was never actually persisted. EachRecord can't stop early, so
 		// it can't prevent that gap — this can.
 		for _, record := range fetches.Records() {
+			recordsConsumedTotal.Inc()
+			start := time.Now()
 			ok := processRecord(ctx, record, service, writer)
+			processingDuration.Observe(time.Since(start).Seconds())
 
 			if ok {
 				if err := client.CommitRecords(ctx, record); err != nil {
@@ -136,6 +186,7 @@ func processRecord(ctx context.Context, record *kgo.Record, service *telemetry.P
 		// rather than block the partition forever. Dead-lettering
 		// malformed records is deferred, not forgotten (PROGRESS.md).
 		log.Printf("decode failed for offset %d: %v", record.Offset, err)
+		recordsFailedTotal.WithLabelValues("decode").Inc()
 		return true
 	}
 
@@ -144,6 +195,7 @@ func processRecord(ctx context.Context, record *kgo.Record, service *telemetry.P
 		// Also permanent — a validation failure won't fix itself on
 		// redelivery either.
 		log.Printf("invalid event %s at offset %d: %v", event.EventID, record.Offset, err)
+		recordsFailedTotal.WithLabelValues("validation").Inc()
 		return true
 	}
 
@@ -162,8 +214,11 @@ func processRecord(ctx context.Context, record *kgo.Record, service *telemetry.P
 		// let redelivery (this fetch's caller breaks the loop) try
 		// again on the next poll or after a restart.
 		log.Printf("CRITICAL: failed to persist event %s at offset %d: %v", event.EventID, record.Offset, err)
+		recordsFailedTotal.WithLabelValues("persist").Inc()
 		return false
 	}
+
+	recordsProcessedTotal.Inc()
 
 	return true
 }
