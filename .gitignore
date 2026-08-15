@@ -12,3 +12,8 @@ apps/web/src/routeTree.gen.ts
 apps/web/.output/
 apps/web/.vinxi/
 apps/web/dist/
+
+# Local Postgres backup dumps (scripts/backup-postgres.sh) — never
+# committed, same reasoning as .env*: real customer data, even in a
+# local dev backup, doesn't belong in source control.
+backups/
