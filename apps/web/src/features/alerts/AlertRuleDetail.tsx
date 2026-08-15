@@ -1,6 +1,6 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { AlertEventList } from "./AlertEventList";
-import { alertRuleQueryOptions } from "./api";
+import { alertRuleQueryOptions, describeAlertCondition } from "./api";
 
 export function AlertRuleDetail({ ruleId }: { ruleId: string }) {
 	const { data: rule } = useSuspenseQuery(alertRuleQueryOptions(ruleId));
@@ -11,6 +11,8 @@ export function AlertRuleDetail({ ruleId }: { ruleId: string }) {
 			<dl>
 				<dt>Type</dt>
 				<dd>{rule.type}</dd>
+				<dt>Condition</dt>
+				<dd>{describeAlertCondition(rule)}</dd>
 				<dt>Status</dt>
 				<dd>{rule.enabled ? "Enabled" : "Disabled"}</dd>
 				<dt>Created</dt>

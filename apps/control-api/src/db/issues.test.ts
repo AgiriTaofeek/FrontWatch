@@ -1,7 +1,13 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { clickhouse } from "./clickhouse";
-import { getIssue, listIssues, listNewIssues, parseIssueId } from "./issues";
+import {
+	countRecentErrors,
+	getIssue,
+	listIssues,
+	listNewIssues,
+	parseIssueId,
+} from "./issues";
 
 // Integration test — hits the real local ClickHouse. Inserts test rows
 // directly (the write path is already proven end-to-end in Step 5 —
@@ -150,6 +156,47 @@ describe("listNewIssues (Step 8's alert-evaluator)", () => {
 		expect(newIssues).toHaveLength(1);
 		expect(newIssues[0]?.fingerprint).toBe(newFingerprint);
 		expect(newIssues[0]?.title).toBe("A brand new failure");
+	});
+});
+
+describe("countRecentErrors (Step 8's error_spike alert type)", () => {
+	it("counts raw error events since a timestamp, not distinct issues", async () => {
+		// Reuses the module-level projectId/insertTestEvent helper (which
+		// always writes event_type "error") — countRecentErrors only cares
+		// about project_id + event_type + client_timestamp, so sharing the
+		// project with this file's other tests (different fingerprints,
+		// fixed 2026-08-14 timestamps well outside the real-time window
+		// below) doesn't interfere.
+		const now = new Date();
+		const recentTimestamp = new Date(now.getTime() - 60_000); // 1m ago
+		const oldTimestamp = new Date(now.getTime() - 3_600_000); // 1h ago
+
+		// Three occurrences of the SAME fingerprint within the window —
+		// countRecentErrors must count all three, not collapse them into
+		// one the way listIssues' GROUP BY would.
+		for (let i = 0; i < 3; i++) {
+			const eventId = `evt_spike_${i}_${Date.now()}`;
+			await insertTestEvent({
+				eventId,
+				clientTimestamp: recentTimestamp
+					.toISOString()
+					.replace("T", " ")
+					.replace("Z", ""),
+			});
+		}
+		// One occurrence outside the window — must not be counted.
+		await insertTestEvent({
+			eventId: `evt_spike_old_${Date.now()}`,
+			clientTimestamp: oldTimestamp
+				.toISOString()
+				.replace("T", " ")
+				.replace("Z", ""),
+		});
+
+		const since = new Date(now.getTime() - 5 * 60_000); // last 5m
+		const count = await countRecentErrors(projectId, since);
+
+		expect(count).toBe(3);
 	});
 });
 

@@ -4,6 +4,7 @@ export type {
 	ListAlertEventsResponse,
 } from "./alertEvents";
 export type {
+	AlertMetricName,
 	AlertRuleSummary,
 	AlertRuleType,
 	ListAlertRulesResponse,

@@ -1,6 +1,8 @@
 import { sql } from "drizzle-orm";
 import {
 	boolean,
+	doublePrecision,
+	integer,
 	pgEnum,
 	pgTable,
 	text,
@@ -92,14 +94,27 @@ export const releases = pgTable(
 	],
 );
 
-// Step 8's first Alerting slice (E13-alerts.md US-13.01/13.02): "new
-// issue" only — error_spike and performance_regression need real
-// threshold/window logic and are deferred to later chunks, not
-// forgotten. type is still a real enum (not a bare string) so those
-// later types slot in the same way EventType/WireEventType already
-// did in Step 7, rather than needing a schema migration to widen a
-// check later.
-export const alertRuleType = pgEnum("alert_rule_type", ["new_issue"]);
+// Step 8's Alerting slice (E13-alerts.md US-13.01/13.02/13.03): all
+// three documented alert types now real. type is still a real enum
+// (not a bare string) — widened once, the same way EventType/
+// WireEventType already did in Step 7.
+export const alertRuleType = pgEnum("alert_rule_type", [
+	"new_issue",
+	"error_spike",
+	"performance_regression",
+]);
+
+// The five Core Web Vitals instrumentation.md names — same set
+// packages/sdk/src/performance.ts already captures, so a
+// performance_regression rule can only ever target a metric that's
+// actually collected.
+export const alertMetricName = pgEnum("alert_metric_name", [
+	"CLS",
+	"FCP",
+	"INP",
+	"LCP",
+	"TTFB",
+]);
 
 // alert-investigation.md's own documented state machine (Triggered ->
 // Acknowledged -> Recovered -> Resolved) — the full enum is defined
@@ -131,6 +146,26 @@ export const alertRules = pgTable("alert_rules", {
 	type: alertRuleType("type").notNull().default("new_issue"),
 	webhookUrl: text("webhook_url").notNull(),
 	enabled: boolean("enabled").notNull().default(true),
+
+	// Condition config — nullable, only the columns matching `type` are
+	// ever populated (routes/alertRules.ts's discriminated-union body
+	// schema enforces exactly which, so this table can never end up with
+	// a half-populated condition for a given type). Flat nullable
+	// columns rather than a JSON blob: every other Postgres table in
+	// this schema is flat (raw JSON is ADR-008's ClickHouse-side
+	// pattern, deliberately not used here), and three sparse columns is
+	// small enough that a JSON condition column would just be
+	// indirection without a real benefit.
+	//
+	// error_spike (US-13.02): windowMinutes + thresholdCount — "N+
+	// errors within the last M minutes".
+	// performance_regression (US-13.03): windowMinutes + metricName +
+	// thresholdValue — "metric's p75 over the last M minutes exceeds
+	// this value".
+	windowMinutes: integer("window_minutes"),
+	thresholdCount: integer("threshold_count"),
+	metricName: alertMetricName("metric_name"),
+	thresholdValue: doublePrecision("threshold_value"),
 
 	createdAt: timestamp("created_at", { withTimezone: true })
 		.notNull()

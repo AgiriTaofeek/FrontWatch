@@ -29,7 +29,7 @@ afterEach(() => {
 });
 
 describe("AlertRuleDetail", () => {
-	it("renders the rule's metadata and its (empty) fired-events list", async () => {
+	it("renders the rule's metadata (including its condition) and its (empty) fired-events list", async () => {
 		renderWithData(
 			"rule_1",
 			{
@@ -38,6 +38,10 @@ describe("AlertRuleDetail", () => {
 				type: "new_issue",
 				webhookUrl: "https://example.com/hooks/1",
 				enabled: true,
+				windowMinutes: null,
+				thresholdCount: null,
+				metricName: null,
+				thresholdValue: null,
 				createdAt: "2026-08-14 10:00:00.000",
 				updatedAt: "2026-08-14 10:00:00.000",
 			},
@@ -49,19 +53,24 @@ describe("AlertRuleDetail", () => {
 				name: "https://example.com/hooks/1",
 			}),
 		).toBeTruthy();
+		expect(screen.getByText("Any new issue")).toBeTruthy();
 		expect(screen.getByText("Enabled")).toBeTruthy();
 		expect(screen.getByText(/no alerts have fired/i)).toBeTruthy();
 	});
 
-	it("renders fired events alongside the rule's metadata", async () => {
+	it("renders an error_spike rule's condition alongside fired events", async () => {
 		renderWithData(
 			"rule_1",
 			{
 				id: "rule_1",
 				projectId: "proj_1",
-				type: "new_issue",
+				type: "error_spike",
 				webhookUrl: "https://example.com/hooks/1",
 				enabled: false,
+				windowMinutes: 10,
+				thresholdCount: 25,
+				metricName: null,
+				thresholdValue: null,
 				createdAt: "2026-08-14 10:00:00.000",
 				updatedAt: "2026-08-14 10:00:00.000",
 			},
@@ -80,6 +89,7 @@ describe("AlertRuleDetail", () => {
 		);
 
 		expect(await screen.findByText("Disabled")).toBeTruthy();
+		expect(screen.getByText("≥ 25 errors in 10m")).toBeTruthy();
 		expect(screen.getByText("fp_abc123")).toBeTruthy();
 	});
 });

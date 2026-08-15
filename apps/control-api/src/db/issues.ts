@@ -211,6 +211,32 @@ export async function listNewIssues(
 	return rows.map((row) => toSummary(projectId, row));
 }
 
+// Step 8's error_spike alert type (US-13.02): "a configured threshold
+// can trigger an alert" when error *activity* — not distinct issues —
+// increases unexpectedly. Deliberately a raw event count, not
+// count(DISTINCT fingerprint): ten occurrences of one recurring issue
+// in a short window is exactly the kind of spike this alert type
+// exists to catch, and a distinct-issue count would miss it entirely.
+export async function countRecentErrors(
+	projectId: string,
+	since: Date,
+): Promise<number> {
+	const result = await clickhouse.query({
+		query: `
+			SELECT count() AS error_count
+			FROM events
+			WHERE project_id = {projectId:String}
+				AND event_type = 'error'
+				AND client_timestamp >= {since:DateTime64(3)}
+		`,
+		format: "JSONEachRow",
+		query_params: { projectId, since: toClickHouseDateTime64(since) },
+	});
+
+	const rows = await result.json<{ error_count: string }>();
+	return Number(rows[0]?.error_count ?? 0);
+}
+
 export function parseIssueId(
 	issueId: string,
 ): { projectId: string; fingerprint: string } | null {
