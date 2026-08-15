@@ -15,8 +15,11 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/AgiriTaofeek/FrontWatch/services/data-plane/internal/platform/config"
+	"github.com/AgiriTaofeek/FrontWatch/services/data-plane/internal/platform/health"
+	platformmetrics "github.com/AgiriTaofeek/FrontWatch/services/data-plane/internal/platform/metrics"
 	"github.com/AgiriTaofeek/FrontWatch/services/data-plane/internal/queue"
 	"github.com/AgiriTaofeek/FrontWatch/services/data-plane/internal/storage/postgres"
 	"github.com/AgiriTaofeek/FrontWatch/services/data-plane/internal/telemetry"
@@ -47,7 +50,16 @@ func main() {
 	service := telemetry.NewIngestService(credentials, publisher)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /ingest/v1/events", ingestHandler(service))
+	const ingestRoute = "POST /ingest/v1/events"
+	mux.Handle(ingestRoute, platformmetrics.InstrumentHandler(
+		ingestRoute, httpRequestsTotal, httpRequestDuration, ingestHandler(service),
+	))
+
+	health.Register(mux, map[string]health.Checker{
+		"postgres": func(ctx context.Context) error { return pool.Ping(ctx) },
+		"redpanda": publisher.Ping,
+	})
+	mux.Handle("GET /metrics", promhttp.Handler())
 
 	server := &http.Server{
 		Addr:    ":" + cfg.Port,
@@ -130,12 +142,15 @@ func ingestHandler(service *telemetry.IngestService) http.HandlerFunc {
 			return
 		}
 
+		eventsAcceptedTotal.Add(float64(result.Accepted))
+
 		resp := ingestResponsePayload{
 			Accepted:  result.Accepted,
 			Rejected:  result.Rejected,
 			RequestID: requestID,
 		}
 		for _, rejection := range result.Rejections {
+			eventsRejectedTotal.WithLabelValues(rejection.Code).Inc()
 			resp.Rejections = append(resp.Rejections, rejectionPayload{
 				EventID: rejection.EventID,
 				Code:    rejection.Code,

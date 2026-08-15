@@ -44,6 +44,14 @@ func (p *Publisher) Close() {
 	p.client.Close()
 }
 
+// Ping reports whether at least one Redpanda broker is currently
+// reachable — the readiness check ingestion's /health/ready uses
+// (ADR-026). A thin wrapper, not a new capability: kgo.Client already
+// does exactly this.
+func (p *Publisher) Ping(ctx context.Context) error {
+	return p.client.Ping(ctx)
+}
+
 // PublishEvent publishes one raw event, keyed by projectID so every
 // event for one project lands on the same partition — preserves
 // per-project ordering downstream, while still spreading load across
