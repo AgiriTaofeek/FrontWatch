@@ -24,10 +24,26 @@ var (
 		Help: "Total records that failed processing, by failure kind.",
 	}, []string{"reason"})
 
-	processingDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:    "worker_processing_duration_seconds",
-		Help:    "Time to decode, process, and persist one record.",
+	// batchPersistDuration replaces what used to be
+	// worker_processing_duration_seconds ("time to decode, process, and
+	// persist one record") — real load testing (PROGRESS.md's Step 9
+	// Load testing entry) found one-record-at-a-time ClickHouse inserts
+	// capped steady-state throughput at ~220-250 events/sec, so
+	// cmd/worker now batches everything from a single PollFetches call
+	// into one WriteBatch call. Keeping the old per-record name would
+	// be actively misleading now that one observation covers however
+	// many events were in the batch — batchSize below is what tells
+	// you how many.
+	batchPersistDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "worker_batch_persist_duration_seconds",
+		Help:    "Time to persist one ClickHouse batch (all events from a single PollFetches call).",
 		Buckets: prometheus.DefBuckets,
+	})
+
+	batchSize = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "worker_batch_size",
+		Help:    "Number of events in each ClickHouse batch write.",
+		Buckets: prometheus.ExponentialBuckets(1, 2, 12), // 1, 2, 4, ... 2048
 	})
 )
 
@@ -36,6 +52,7 @@ func init() {
 		recordsConsumedTotal,
 		recordsProcessedTotal,
 		recordsFailedTotal,
-		processingDuration,
+		batchPersistDuration,
+		batchSize,
 	)
 }
