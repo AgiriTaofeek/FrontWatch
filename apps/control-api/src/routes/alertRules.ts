@@ -3,9 +3,12 @@ import { Elysia, t } from "elysia";
 import { listAlertEvents } from "../db/alertEvents";
 import { db } from "../db/client";
 import { alertRules } from "../db/schema";
+import { authorizeProjectAccess } from "../lib/authorization";
+import { authPlugin } from "../lib/authPlugin";
 
-// No auth/RBAC yet, same scope note as projects.ts/issues.ts
-// (PROGRESS.md Step 2) — deferred to Step 9, not an oversight.
+// Step 9's RBAC-enforcement slice: "engineer" or higher to create/
+// update a rule (a real write with operational consequences — it
+// controls who gets paged), "viewer" (any active member) to read.
 //
 // US-13.01: "an authorized user can create a rule, the rule has a
 // condition and notification destination, invalid rules cannot be
@@ -54,9 +57,19 @@ const createAlertRuleBody = t.Union([
 ]);
 
 export const alertRulesRoutes = new Elysia()
+	.use(authPlugin())
 	.post(
 		"/projects/:projectId/alert-rules",
-		async ({ params, body }) => {
+		async ({ params, body, principal, status }) => {
+			const auth = await authorizeProjectAccess(
+				principal,
+				params.projectId,
+				"engineer",
+			);
+			if (!auth.ok) {
+				return status(auth.status, { error: auth.error });
+			}
+
 			const [rule] = await db
 				.insert(alertRules)
 				.values({
@@ -92,7 +105,16 @@ export const alertRulesRoutes = new Elysia()
 	)
 	.get(
 		"/projects/:projectId/alert-rules",
-		async ({ params }) => {
+		async ({ params, principal, status }) => {
+			const auth = await authorizeProjectAccess(
+				principal,
+				params.projectId,
+				"viewer",
+			);
+			if (!auth.ok) {
+				return status(auth.status, { error: auth.error });
+			}
+
 			const rows = await db
 				.select()
 				.from(alertRules)
@@ -107,7 +129,16 @@ export const alertRulesRoutes = new Elysia()
 	)
 	.patch(
 		"/projects/:projectId/alert-rules/:ruleId",
-		async ({ params, body, status }) => {
+		async ({ params, body, principal, status }) => {
+			const auth = await authorizeProjectAccess(
+				principal,
+				params.projectId,
+				"engineer",
+			);
+			if (!auth.ok) {
+				return status(auth.status, { error: auth.error });
+			}
+
 			const [rule] = await db
 				.update(alertRules)
 				.set({ enabled: body.enabled, updatedAt: new Date() })
@@ -142,9 +173,18 @@ export const alertRulesRoutes = new Elysia()
 	// that route's layout child in TanStack Router's file-based
 	// routing, silently requiring an <Outlet /> the list page doesn't
 	// have.
+	//
+	// No projectId in the URL to authorize against directly — these two
+	// routes look the rule up first (to learn its projectId), then
+	// authorize, then either reuse the row already fetched (GET
+	// /alert-rules/:ruleId) or proceed to the events query (GET
+	// /alert-rules/:ruleId/events). A rule that doesn't exist and a
+	// rule a cross-tenant principal can't see both 404 identically —
+	// same reasoning authorizeProjectAccess already applies to project
+	// ids.
 	.get(
 		"/alert-rules/:ruleId",
-		async ({ params, status }) => {
+		async ({ params, principal, status }) => {
 			const [rule] = await db
 				.select()
 				.from(alertRules)
@@ -152,6 +192,15 @@ export const alertRulesRoutes = new Elysia()
 
 			if (!rule) {
 				return status(404, { error: "alert rule not found" });
+			}
+
+			const auth = await authorizeProjectAccess(
+				principal,
+				rule.projectId,
+				"viewer",
+			);
+			if (!auth.ok) {
+				return status(auth.status, { error: auth.error });
 			}
 
 			return rule;
@@ -162,7 +211,25 @@ export const alertRulesRoutes = new Elysia()
 	)
 	.get(
 		"/alert-rules/:ruleId/events",
-		async ({ params }) => {
+		async ({ params, principal, status }) => {
+			const [rule] = await db
+				.select()
+				.from(alertRules)
+				.where(eq(alertRules.id, params.ruleId));
+
+			if (!rule) {
+				return status(404, { error: "alert rule not found" });
+			}
+
+			const auth = await authorizeProjectAccess(
+				principal,
+				rule.projectId,
+				"viewer",
+			);
+			if (!auth.ok) {
+				return status(auth.status, { error: auth.error });
+			}
+
 			const events = await listAlertEvents(params.ruleId);
 			return { alertEvents: events };
 		},

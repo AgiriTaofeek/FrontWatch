@@ -36,6 +36,13 @@
 			"when": 1786785199980,
 			"tag": "0004_kind_spencer_smythe",
 			"breakpoints": true
+		},
+		{
+			"idx": 5,
+			"version": "7",
+			"when": 1786787174265,
+			"tag": "0005_talented_tag",
+			"breakpoints": true
 		}
 	]
 }

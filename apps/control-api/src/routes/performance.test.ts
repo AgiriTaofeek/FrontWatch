@@ -1,9 +1,23 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { clickhouse } from "../db/clickhouse";
+import { db } from "../db/client";
+import { projects } from "../db/schema";
+import {
+	cleanupTestPrincipal,
+	registerTestPrincipal,
+	seedTestProject,
+} from "../testHelpers/auth";
 import { performanceRoutes } from "./performance";
 
-const projectId = randomUUID();
+// Step 9's RBAC-enforcement slice — see issues.test.ts's own comment
+// for why a real Postgres project row (not a bare randomUUID()) is
+// now required.
+
+const principal = await registerTestPrincipal();
+const project = await seedTestProject(principal.organizationId);
+const projectId = project.id;
 const eventId = `evt_perf_route_test_${Date.now()}`;
 
 async function seedEvent() {
@@ -38,6 +52,8 @@ afterAll(async () => {
 	await clickhouse.command({
 		query: `ALTER TABLE events DELETE WHERE event_id = '${eventId}'`,
 	});
+	await db.delete(projects).where(eq(projects.id, projectId));
+	await cleanupTestPrincipal(principal);
 });
 
 describe("GET /projects/:projectId/performance", () => {
@@ -45,7 +61,9 @@ describe("GET /projects/:projectId/performance", () => {
 		await seedEvent();
 
 		const response = await performanceRoutes.handle(
-			new Request(`http://localhost/projects/${projectId}/performance`),
+			new Request(`http://localhost/projects/${projectId}/performance`, {
+				headers: { Cookie: principal.cookie },
+			}),
 		);
 		const body = await response.json();
 
@@ -57,12 +75,34 @@ describe("GET /projects/:projectId/performance", () => {
 	});
 
 	it("returns an empty list for a project with no performance events", async () => {
+		const otherProject = await seedTestProject(principal.organizationId);
+
 		const response = await performanceRoutes.handle(
-			new Request(`http://localhost/projects/${randomUUID()}/performance`),
+			new Request(`http://localhost/projects/${otherProject.id}/performance`, {
+				headers: { Cookie: principal.cookie },
+			}),
 		);
 		const body = await response.json();
 
 		expect(response.status).toBe(200);
 		expect(body.metrics).toHaveLength(0);
+
+		await db.delete(projects).where(eq(projects.id, otherProject.id));
+	});
+
+	it("returns 401 without a session", async () => {
+		const response = await performanceRoutes.handle(
+			new Request(`http://localhost/projects/${projectId}/performance`),
+		);
+		expect(response.status).toBe(401);
+	});
+
+	it("returns 404 for a project that doesn't exist", async () => {
+		const response = await performanceRoutes.handle(
+			new Request(`http://localhost/projects/${randomUUID()}/performance`, {
+				headers: { Cookie: principal.cookie },
+			}),
+		);
+		expect(response.status).toBe(404);
 	});
 });

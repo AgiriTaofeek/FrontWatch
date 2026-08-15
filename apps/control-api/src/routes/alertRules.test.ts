@@ -2,25 +2,26 @@ import { afterAll, describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
 import { db } from "../db/client";
 import { alertEvents, alertRules, projects } from "../db/schema";
+import {
+	cleanupTestPrincipal,
+	registerTestPrincipal,
+	seedTestProject,
+	setTestMembershipRole,
+} from "../testHelpers/auth";
 import { alertRulesRoutes } from "./alertRules";
 
 // Integration test — hits the real local Postgres, same pattern as
 // releases.test.ts. A real project row is required first: alert_rules
 // .project_id is a real foreign key.
+//
+// Step 9's RBAC-enforcement slice: creating/updating a rule needs
+// "engineer" or higher; reading needs any active membership. The
+// principal here stays an Administrator (what registration always
+// creates), which satisfies both floors.
 
+const principal = await registerTestPrincipal();
 let projectId: string;
 const createdRuleIds: string[] = [];
-
-async function seedProject(): Promise<string> {
-	const [project] = await db
-		.insert(projects)
-		.values({ publicKey: `fw_pk_alert_test_${Date.now()}` })
-		.returning();
-	if (!project) {
-		throw new Error("failed to seed test project");
-	}
-	return project.id;
-}
 
 afterAll(async () => {
 	for (const id of createdRuleIds) {
@@ -30,16 +31,21 @@ afterAll(async () => {
 	if (projectId) {
 		await db.delete(projects).where(eq(projects.id, projectId));
 	}
+	await cleanupTestPrincipal(principal);
 });
 
 describe("POST /projects/:projectId/alert-rules", () => {
 	it("creates a new_issue rule with a generated id, enabled by default", async () => {
-		projectId = await seedProject();
+		const project = await seedTestProject(principal.organizationId);
+		projectId = project.id;
 
 		const response = await alertRulesRoutes.handle(
 			new Request(`http://localhost/projects/${projectId}/alert-rules`, {
 				method: "POST",
-				headers: { "Content-Type": "application/json" },
+				headers: {
+					"Content-Type": "application/json",
+					Cookie: principal.cookie,
+				},
 				body: JSON.stringify({
 					type: "new_issue",
 					webhookUrl: "https://example.com/hooks/1",
@@ -62,7 +68,10 @@ describe("POST /projects/:projectId/alert-rules", () => {
 		const response = await alertRulesRoutes.handle(
 			new Request(`http://localhost/projects/${projectId}/alert-rules`, {
 				method: "POST",
-				headers: { "Content-Type": "application/json" },
+				headers: {
+					"Content-Type": "application/json",
+					Cookie: principal.cookie,
+				},
 				body: JSON.stringify({ type: "new_issue", webhookUrl: "not-a-url" }),
 			}),
 		);
@@ -74,7 +83,10 @@ describe("POST /projects/:projectId/alert-rules", () => {
 		const response = await alertRulesRoutes.handle(
 			new Request(`http://localhost/projects/${projectId}/alert-rules`, {
 				method: "POST",
-				headers: { "Content-Type": "application/json" },
+				headers: {
+					"Content-Type": "application/json",
+					Cookie: principal.cookie,
+				},
 				body: JSON.stringify({
 					type: "error_spike",
 					webhookUrl: "https://example.com/hooks/2",
@@ -98,7 +110,10 @@ describe("POST /projects/:projectId/alert-rules", () => {
 		const response = await alertRulesRoutes.handle(
 			new Request(`http://localhost/projects/${projectId}/alert-rules`, {
 				method: "POST",
-				headers: { "Content-Type": "application/json" },
+				headers: {
+					"Content-Type": "application/json",
+					Cookie: principal.cookie,
+				},
 				body: JSON.stringify({
 					type: "error_spike",
 					webhookUrl: "https://example.com/hooks/2",
@@ -114,7 +129,10 @@ describe("POST /projects/:projectId/alert-rules", () => {
 		const response = await alertRulesRoutes.handle(
 			new Request(`http://localhost/projects/${projectId}/alert-rules`, {
 				method: "POST",
-				headers: { "Content-Type": "application/json" },
+				headers: {
+					"Content-Type": "application/json",
+					Cookie: principal.cookie,
+				},
 				body: JSON.stringify({
 					type: "performance_regression",
 					webhookUrl: "https://example.com/hooks/3",
@@ -139,7 +157,10 @@ describe("POST /projects/:projectId/alert-rules", () => {
 		const response = await alertRulesRoutes.handle(
 			new Request(`http://localhost/projects/${projectId}/alert-rules`, {
 				method: "POST",
-				headers: { "Content-Type": "application/json" },
+				headers: {
+					"Content-Type": "application/json",
+					Cookie: principal.cookie,
+				},
 				body: JSON.stringify({
 					type: "performance_regression",
 					webhookUrl: "https://example.com/hooks/3",
@@ -152,12 +173,61 @@ describe("POST /projects/:projectId/alert-rules", () => {
 
 		expect(response.status).toBe(422);
 	});
+
+	it("returns 401 without a session", async () => {
+		const response = await alertRulesRoutes.handle(
+			new Request(`http://localhost/projects/${projectId}/alert-rules`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					type: "new_issue",
+					webhookUrl: "https://example.com/hooks/unauth",
+				}),
+			}),
+		);
+
+		expect(response.status).toBe(401);
+	});
+
+	it("returns 403 for a Viewer — creating a rule needs engineer or higher", async () => {
+		await setTestMembershipRole(
+			principal.userId,
+			principal.organizationId,
+			"viewer",
+		);
+
+		try {
+			const response = await alertRulesRoutes.handle(
+				new Request(`http://localhost/projects/${projectId}/alert-rules`, {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						Cookie: principal.cookie,
+					},
+					body: JSON.stringify({
+						type: "new_issue",
+						webhookUrl: "https://example.com/hooks/viewer-attempt",
+					}),
+				}),
+			);
+
+			expect(response.status).toBe(403);
+		} finally {
+			await setTestMembershipRole(
+				principal.userId,
+				principal.organizationId,
+				"administrator",
+			);
+		}
+	});
 });
 
 describe("GET /projects/:projectId/alert-rules", () => {
 	it("lists rules for a project, newest first", async () => {
 		const response = await alertRulesRoutes.handle(
-			new Request(`http://localhost/projects/${projectId}/alert-rules`),
+			new Request(`http://localhost/projects/${projectId}/alert-rules`, {
+				headers: { Cookie: principal.cookie },
+			}),
 		);
 		const body = await response.json();
 
@@ -175,17 +245,26 @@ describe("GET /projects/:projectId/alert-rules", () => {
 	});
 
 	it("returns an empty list for a project with no rules", async () => {
-		const otherProjectId = await seedProject();
+		const otherProject = await seedTestProject(principal.organizationId);
 
 		const response = await alertRulesRoutes.handle(
-			new Request(`http://localhost/projects/${otherProjectId}/alert-rules`),
+			new Request(`http://localhost/projects/${otherProject.id}/alert-rules`, {
+				headers: { Cookie: principal.cookie },
+			}),
 		);
 		const body = await response.json();
 
 		expect(response.status).toBe(200);
 		expect(body.alertRules).toHaveLength(0);
 
-		await db.delete(projects).where(eq(projects.id, otherProjectId));
+		await db.delete(projects).where(eq(projects.id, otherProject.id));
+	});
+
+	it("returns 401 without a session", async () => {
+		const response = await alertRulesRoutes.handle(
+			new Request(`http://localhost/projects/${projectId}/alert-rules`),
+		);
+		expect(response.status).toBe(401);
 	});
 });
 
@@ -198,7 +277,10 @@ describe("PATCH /projects/:projectId/alert-rules/:ruleId", () => {
 				`http://localhost/projects/${projectId}/alert-rules/${ruleId}`,
 				{
 					method: "PATCH",
-					headers: { "Content-Type": "application/json" },
+					headers: {
+						"Content-Type": "application/json",
+						Cookie: principal.cookie,
+					},
 					body: JSON.stringify({ enabled: false }),
 				},
 			),
@@ -215,7 +297,10 @@ describe("PATCH /projects/:projectId/alert-rules/:ruleId", () => {
 				`http://localhost/projects/${projectId}/alert-rules/00000000-0000-0000-0000-000000000000`,
 				{
 					method: "PATCH",
-					headers: { "Content-Type": "application/json" },
+					headers: {
+						"Content-Type": "application/json",
+						Cookie: principal.cookie,
+					},
 					body: JSON.stringify({ enabled: true }),
 				},
 			),
@@ -225,12 +310,33 @@ describe("PATCH /projects/:projectId/alert-rules/:ruleId", () => {
 	});
 
 	it("returns 404 when the rule belongs to a different project", async () => {
-		const otherProjectId = await seedProject();
+		const otherProject = await seedTestProject(principal.organizationId);
 		const ruleId = createdRuleIds[0];
 
 		const response = await alertRulesRoutes.handle(
 			new Request(
-				`http://localhost/projects/${otherProjectId}/alert-rules/${ruleId}`,
+				`http://localhost/projects/${otherProject.id}/alert-rules/${ruleId}`,
+				{
+					method: "PATCH",
+					headers: {
+						"Content-Type": "application/json",
+						Cookie: principal.cookie,
+					},
+					body: JSON.stringify({ enabled: true }),
+				},
+			),
+		);
+
+		expect(response.status).toBe(404);
+
+		await db.delete(projects).where(eq(projects.id, otherProject.id));
+	});
+
+	it("returns 401 without a session", async () => {
+		const ruleId = createdRuleIds[0];
+		const response = await alertRulesRoutes.handle(
+			new Request(
+				`http://localhost/projects/${projectId}/alert-rules/${ruleId}`,
 				{
 					method: "PATCH",
 					headers: { "Content-Type": "application/json" },
@@ -239,9 +345,7 @@ describe("PATCH /projects/:projectId/alert-rules/:ruleId", () => {
 			),
 		);
 
-		expect(response.status).toBe(404);
-
-		await db.delete(projects).where(eq(projects.id, otherProjectId));
+		expect(response.status).toBe(401);
 	});
 });
 
@@ -250,7 +354,9 @@ describe("GET /alert-rules/:ruleId", () => {
 		const ruleId = createdRuleIds[0];
 
 		const response = await alertRulesRoutes.handle(
-			new Request(`http://localhost/alert-rules/${ruleId}`),
+			new Request(`http://localhost/alert-rules/${ruleId}`, {
+				headers: { Cookie: principal.cookie },
+			}),
 		);
 		const body = await response.json();
 
@@ -263,9 +369,18 @@ describe("GET /alert-rules/:ruleId", () => {
 		const response = await alertRulesRoutes.handle(
 			new Request(
 				"http://localhost/alert-rules/00000000-0000-0000-0000-000000000000",
+				{ headers: { Cookie: principal.cookie } },
 			),
 		);
 		expect(response.status).toBe(404);
+	});
+
+	it("returns 401 without a session", async () => {
+		const ruleId = createdRuleIds[0];
+		const response = await alertRulesRoutes.handle(
+			new Request(`http://localhost/alert-rules/${ruleId}`),
+		);
+		expect(response.status).toBe(401);
 	});
 });
 
@@ -274,7 +389,9 @@ describe("GET /alert-rules/:ruleId/events", () => {
 		const ruleId = createdRuleIds[0];
 
 		const response = await alertRulesRoutes.handle(
-			new Request(`http://localhost/alert-rules/${ruleId}/events`),
+			new Request(`http://localhost/alert-rules/${ruleId}/events`, {
+				headers: { Cookie: principal.cookie },
+			}),
 		);
 		const body = await response.json();
 
@@ -292,7 +409,9 @@ describe("GET /alert-rules/:ruleId/events", () => {
 		]);
 
 		const response = await alertRulesRoutes.handle(
-			new Request(`http://localhost/alert-rules/${ruleId}/events`),
+			new Request(`http://localhost/alert-rules/${ruleId}/events`, {
+				headers: { Cookie: principal.cookie },
+			}),
 		);
 		const body = await response.json();
 
@@ -306,5 +425,13 @@ describe("GET /alert-rules/:ruleId/events", () => {
 			(e: { fingerprint: string }) => e.fingerprint,
 		);
 		expect(fingerprints.sort()).toEqual(["fp_newer", "fp_older"]);
+	});
+
+	it("returns 401 without a session", async () => {
+		const ruleId = createdRuleIds[0];
+		const response = await alertRulesRoutes.handle(
+			new Request(`http://localhost/alert-rules/${ruleId}/events`),
+		);
+		expect(response.status).toBe(401);
 	});
 });

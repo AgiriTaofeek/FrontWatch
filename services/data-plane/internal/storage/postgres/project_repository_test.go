@@ -29,12 +29,38 @@ func testPool(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
-func insertTestProject(t *testing.T, pool *pgxpool.Pool, publicKey, status string) string {
+// insertTestOrganization seeds a bare organization row — Step 9's
+// RBAC-enforcement slice (apps/control-api/src/db/schema.ts) made
+// projects.organization_id a real, NOT NULL, FK-enforced column, so
+// this Go-side test now needs one too, the same reason
+// apps/control-api's own db-layer tests gained an equivalent
+// testHelpers/auth.ts seedTestOrganization() helper. Go has no ORM
+// here — this is the same raw-SQL insert insertTestProject already
+// does, just for the table it now depends on.
+func insertTestOrganization(t *testing.T, pool *pgxpool.Pool) string {
 	t.Helper()
 	var id string
 	err := pool.QueryRow(context.Background(),
-		`INSERT INTO projects (public_key, status) VALUES ($1, $2) RETURNING id`,
-		publicKey, status,
+		`INSERT INTO organizations (name) VALUES ($1) RETURNING id`,
+		"Go Test Org",
+	).Scan(&id)
+	if err != nil {
+		t.Fatalf("insertTestOrganization: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM organizations WHERE id = $1`, id)
+	})
+	return id
+}
+
+func insertTestProject(t *testing.T, pool *pgxpool.Pool, publicKey, status string) string {
+	t.Helper()
+	organizationID := insertTestOrganization(t, pool)
+
+	var id string
+	err := pool.QueryRow(context.Background(),
+		`INSERT INTO projects (organization_id, public_key, status) VALUES ($1, $2, $3) RETURNING id`,
+		organizationID, publicKey, status,
 	).Scan(&id)
 	if err != nil {
 		t.Fatalf("insertTestProject: %v", err)

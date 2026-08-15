@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { Elysia } from "elysia";
 import { clickhouse } from "./db/clickhouse";
 import { db } from "./db/client";
+import { authPlugin } from "./lib/authPlugin";
 import { healthRoutes } from "./lib/health";
 import { metricsPlugin } from "./lib/metrics";
 import { alertRulesRoutes } from "./routes/alertRules";
@@ -20,6 +21,7 @@ import { sessionsRoutes } from "./routes/sessions";
 // unprefixed paths by calling the route module directly instead of
 // going through this composition.
 const api = new Elysia({ prefix: "/api/v1" })
+	.use(authPlugin())
 	.use(authRoutes)
 	.use(projectsRoutes)
 	.use(issuesRoutes)

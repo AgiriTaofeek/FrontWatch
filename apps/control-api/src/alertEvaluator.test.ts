@@ -3,7 +3,8 @@ import { eq } from "drizzle-orm";
 import { runAlertEvaluationCycle } from "./alertEvaluator";
 import { clickhouse, toClickHouseDateTime64 } from "./db/clickhouse";
 import { db } from "./db/client";
-import { alertEvents, alertRules, projects } from "./db/schema";
+import { alertEvents, alertRules, organizations, projects } from "./db/schema";
+import { seedTestOrganization } from "./testHelpers/auth";
 
 // Full-cycle integration test — real Postgres (rule + dedup rows),
 // real ClickHouse (the issue the rule should detect), and a real
@@ -13,6 +14,7 @@ import { alertEvents, alertRules, projects } from "./db/schema";
 
 let projectId: string;
 let ruleId: string;
+let organizationId: string;
 const insertedEventIds: string[] = [];
 
 afterAll(async () => {
@@ -24,6 +26,7 @@ afterAll(async () => {
 	await db.delete(alertEvents).where(eq(alertEvents.alertRuleId, ruleId));
 	await db.delete(alertRules).where(eq(alertRules.id, ruleId));
 	await db.delete(projects).where(eq(projects.id, projectId));
+	await db.delete(organizations).where(eq(organizations.id, organizationId));
 });
 
 describe("runAlertEvaluationCycle", () => {
@@ -38,9 +41,15 @@ describe("runAlertEvaluationCycle", () => {
 		});
 
 		try {
+			const organization = await seedTestOrganization();
+			organizationId = organization.id;
+
 			const [project] = await db
 				.insert(projects)
-				.values({ publicKey: `fw_pk_alert_evaluator_test_${Date.now()}` })
+				.values({
+					organizationId,
+					publicKey: `fw_pk_alert_evaluator_test_${Date.now()}`,
+				})
 				.returning();
 			if (!project) throw new Error("failed to seed test project");
 			projectId = project.id;
@@ -132,11 +141,18 @@ describe("runAlertEvaluationCycle", () => {
 		const eventIds: string[] = [];
 		let spikeProjectId: string | undefined;
 		let spikeRuleId: string | undefined;
+		let spikeOrganizationId: string | undefined;
 
 		try {
+			const organization = await seedTestOrganization();
+			spikeOrganizationId = organization.id;
+
 			const [project] = await db
 				.insert(projects)
-				.values({ publicKey: `fw_pk_error_spike_evaluator_${Date.now()}` })
+				.values({
+					organizationId: organization.id,
+					publicKey: `fw_pk_error_spike_evaluator_${Date.now()}`,
+				})
 				.returning();
 			if (!project) throw new Error("failed to seed test project");
 			spikeProjectId = project.id;
@@ -221,6 +237,11 @@ describe("runAlertEvaluationCycle", () => {
 			if (spikeProjectId) {
 				await db.delete(projects).where(eq(projects.id, spikeProjectId));
 			}
+			if (spikeOrganizationId) {
+				await db
+					.delete(organizations)
+					.where(eq(organizations.id, spikeOrganizationId));
+			}
 		}
 	});
 
@@ -237,11 +258,16 @@ describe("runAlertEvaluationCycle", () => {
 		const eventIds: string[] = [];
 		let regressionProjectId: string | undefined;
 		let regressionRuleId: string | undefined;
+		let regressionOrganizationId: string | undefined;
 
 		try {
+			const organization = await seedTestOrganization();
+			regressionOrganizationId = organization.id;
+
 			const [project] = await db
 				.insert(projects)
 				.values({
+					organizationId: organization.id,
 					publicKey: `fw_pk_performance_regression_evaluator_${Date.now()}`,
 				})
 				.returning();
@@ -330,6 +356,11 @@ describe("runAlertEvaluationCycle", () => {
 			}
 			if (regressionProjectId) {
 				await db.delete(projects).where(eq(projects.id, regressionProjectId));
+			}
+			if (regressionOrganizationId) {
+				await db
+					.delete(organizations)
+					.where(eq(organizations.id, regressionOrganizationId));
 			}
 		}
 	});

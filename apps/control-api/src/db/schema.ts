@@ -20,11 +20,23 @@ import {
 // (docs/05-architecture/data-model.md §1) has Project depend on Application
 // and Environment, but those tables don't exist yet (PROGRESS.md Step 2 —
 // deliberately deferred, not an oversight). No .references() until they do.
+//
+// organizationId is NOT nullable, unlike those two — Step 9's RBAC-
+// enforcement slice needs a real tenant boundary to enforce against,
+// and "which organization owns this project" is exactly that
+// boundary (security-architecture.md §6). Forward reference to
+// `organizations` (defined further down this file, near the rest of
+// the auth slice) — Drizzle's `.references(() => ...)` arrow function
+// makes definition order in this file irrelevant.
 
 export const projectStatus = pgEnum("project_status", ["active", "disabled"]);
 
 export const projects = pgTable("projects", {
 	id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+
+	organizationId: uuid("organization_id")
+		.notNull()
+		.references(() => organizations.id),
 
 	applicationId: uuid("application_id"),
 	environmentId: uuid("environment_id"),

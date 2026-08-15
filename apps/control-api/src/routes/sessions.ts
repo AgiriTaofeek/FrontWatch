@@ -1,12 +1,23 @@
 import { Elysia, t } from "elysia";
 import { getSession, listSessions, parseSessionId } from "../db/sessions";
+import { authorizeProjectAccess } from "../lib/authorization";
+import { authPlugin } from "../lib/authPlugin";
 
-// No auth/RBAC yet, same scope note as issues.ts/network.ts/projects.ts
-// (PROGRESS.md Step 2) — deferred to Step 9, not an oversight.
+// Step 9's RBAC-enforcement slice, same shape as issues.ts.
 export const sessionsRoutes = new Elysia()
+	.use(authPlugin())
 	.get(
 		"/projects/:projectId/sessions",
-		async ({ params, query }) => {
+		async ({ params, principal, query, status }) => {
+			const auth = await authorizeProjectAccess(
+				principal,
+				params.projectId,
+				"viewer",
+			);
+			if (!auth.ok) {
+				return status(auth.status, { error: auth.error });
+			}
+
 			const sessions = await listSessions(params.projectId, {
 				from: query.from,
 				to: query.to,
@@ -25,10 +36,19 @@ export const sessionsRoutes = new Elysia()
 	)
 	.get(
 		"/sessions/:sessionId",
-		async ({ params, status }) => {
+		async ({ params, principal, status }) => {
 			const parsed = parseSessionId(params.sessionId);
 			if (!parsed) {
 				return status(400, { error: "malformed session id" });
+			}
+
+			const auth = await authorizeProjectAccess(
+				principal,
+				parsed.projectId,
+				"viewer",
+			);
+			if (!auth.ok) {
+				return status(auth.status, { error: auth.error });
 			}
 
 			const session = await getSession(parsed.projectId, parsed.rawSessionId);
