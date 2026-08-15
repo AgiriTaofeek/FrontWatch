@@ -5,6 +5,7 @@ import { db } from "./db/client";
 import { healthRoutes } from "./lib/health";
 import { metricsPlugin } from "./lib/metrics";
 import { alertRulesRoutes } from "./routes/alertRules";
+import { authRoutes } from "./routes/auth";
 import { issuesRoutes } from "./routes/issues";
 import { networkRoutes } from "./routes/network";
 import { performanceRoutes } from "./routes/performance";
@@ -19,6 +20,7 @@ import { sessionsRoutes } from "./routes/sessions";
 // unprefixed paths by calling the route module directly instead of
 // going through this composition.
 const api = new Elysia({ prefix: "/api/v1" })
+	.use(authRoutes)
 	.use(projectsRoutes)
 	.use(issuesRoutes)
 	.use(networkRoutes)

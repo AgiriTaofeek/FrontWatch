@@ -10,6 +10,11 @@ export type {
 	ListAlertRulesResponse,
 } from "./alertRules";
 export type {
+	AuthenticatedPrincipal,
+	MembershipRole,
+	OrganizationMembershipSummary,
+} from "./auth";
+export type {
 	IssueDetail,
 	IssueSummary,
 	ListIssuesResponse,
