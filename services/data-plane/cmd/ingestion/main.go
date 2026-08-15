@@ -64,6 +64,19 @@ func main() {
 	server := &http.Server{
 		Addr:    ":" + cfg.Port,
 		Handler: mux,
+		// Real chaos testing (Failure recovery, PROGRESS.md's Step 9
+		// entry) found this server previously had no timeouts at all —
+		// a killed Redpanda left a real request hanging past a
+		// 20-second client-side cutoff with no sign of ever returning.
+		// ingestHandler's own per-request context timeout is the
+		// primary, graceful bound (it lets an in-flight publish loop
+		// fail its remaining events cleanly and still return a normal
+		// response); these are the blunter connection-level backstop —
+		// set comfortably longer so the graceful path fires first in
+		// the ordinary case.
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 20 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 
 	go func() {
@@ -110,6 +123,10 @@ type errorBody struct {
 	RequestID string `json:"request_id"`
 }
 
+// requestProcessingTimeout bounds telemetry.IngestService.Ingest's
+// entire run for one request — see the call site's comment.
+const requestProcessingTimeout = 15 * time.Second
+
 // ingestHandler is deliberately thin, per services.md's rule: handlers
 // parse input and map responses, never business rules — everything
 // that matters happens in telemetry.IngestService.
@@ -129,16 +146,38 @@ func ingestHandler(service *telemetry.IngestService) http.HandlerFunc {
 			return
 		}
 
-		result, err := service.Ingest(r.Context(), publicKey, req)
+		// Bounds the whole request regardless of batch size or which
+		// dependency is slow — the credential check and every event's
+		// publish attempt all share this one deadline, rather than each
+		// getting its own timeout that could stack into an unbounded
+		// total for a large batch. See this file's http.Server comment
+		// and internal/queue's recordDeliveryTimeout for the other two
+		// layers of the same fix.
+		ctx, cancel := context.WithTimeout(r.Context(), requestProcessingTimeout)
+		defer cancel()
+
+		result, err := service.Ingest(ctx, publicKey, req)
 		if err != nil {
-			if errors.Is(err, telemetry.ErrInvalidCredential) {
+			switch {
+			case errors.Is(err, telemetry.ErrInvalidCredential):
 				// Same response whether the key is wrong or just
 				// disabled — internal/storage/postgres already made
 				// this call once, staying consistent with it here.
 				writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "invalid or inactive project credential", requestID)
-				return
+			case errors.Is(err, telemetry.ErrDependencyUnavailable):
+				// Real chaos testing (Failure recovery, PROGRESS.md's
+				// Step 9 entry) found this case used to be
+				// indistinguishable from the one above — a Postgres
+				// outage produced the identical 401 a bad key would,
+				// which packages/sdk's transport.ts then correctly (per
+				// its own rules) never retried. 503 tells the caller
+				// this is retryable; operations.md's own transport
+				// mapping names this exact code for "dependency
+				// unavailable."
+				writeError(w, http.StatusServiceUnavailable, "DEPENDENCY_UNAVAILABLE", "temporarily unable to process this request, retry shortly", requestID)
+			default:
+				writeError(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error(), requestID)
 			}
-			writeError(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error(), requestID)
 			return
 		}
 

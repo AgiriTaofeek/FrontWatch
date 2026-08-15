@@ -3,6 +3,7 @@ import { Elysia } from "elysia";
 import { clickhouse } from "./db/clickhouse";
 import { db } from "./db/client";
 import { authPlugin } from "./lib/authPlugin";
+import { errorHandlingPlugin } from "./lib/errorHandling";
 import { healthRoutes } from "./lib/health";
 import { metricsPlugin } from "./lib/metrics";
 import { alertRulesRoutes } from "./routes/alertRules";
@@ -37,6 +38,10 @@ const api = new Elysia({ prefix: "/api/v1" })
 // nesting them inside `api` would produce /api/v1/health/live, which
 // no orchestrator or `docker healthcheck` config expects (ADR-026).
 export const app = new Elysia()
+	// Registered first, deliberately — see errorHandlingPlugin's own
+	// comment: onError only covers routes registered *after* it in
+	// this chain, so it must come before healthRoutes/api below.
+	.use(errorHandlingPlugin())
 	.use(metricsPlugin())
 	.use(
 		healthRoutes({

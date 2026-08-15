@@ -102,3 +102,55 @@ func TestPublisher_PublishEvent(t *testing.T) {
 		})
 	}
 }
+
+// TestPublisher_PublishEvent_RespectsContextDeadline is the regression
+// test for the hard backstop PublishEvent added (Failure recovery,
+// PROGRESS.md's Step 9 entry): real chaos testing found ProduceSync
+// occasionally stayed blocked well past its own configured
+// RecordDeliveryTimeout/RetryTimeout *and* past the caller's context
+// deadline, non-deterministically, when Redpanda was repeatedly killed
+// against the same long-lived client. This test doesn't depend on that
+// exact non-determinism to reproduce reliably — it points the client
+// at a non-routable address (guaranteed to never succeed or fail
+// fast) and asserts PublishEvent still returns at (approximately) the
+// context's own deadline, not later, proving the race against
+// ctx.Done() is what actually bounds it, independent of whatever
+// franz-go itself is doing.
+func TestPublisher_PublishEvent_RespectsContextDeadline(t *testing.T) {
+	// 10.255.255.1 is in a non-routable TEST-NET-adjacent range chosen
+	// specifically to neither refuse the connection immediately nor
+	// ever succeed — the "stuck," not "fast-fail," case this test needs.
+	publisher, err := NewPublisher([]string{"10.255.255.1:9092"})
+	if err != nil {
+		t.Fatalf("NewPublisher() = %v", err)
+	}
+	t.Cleanup(publisher.Close)
+
+	event := telemetry.Event{
+		EventID:   "evt_ctx_deadline_test",
+		EventType: telemetry.EventTypeError,
+		Timestamp: time.Now().UTC(),
+		ErrorPayload: &telemetry.ErrorPayload{
+			Message:       "should never actually send",
+			ExceptionType: "TestError",
+			Handled:       true,
+		},
+	}
+
+	const deadline = 2 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), deadline)
+	defer cancel()
+
+	start := time.Now()
+	err = publisher.PublishEvent(ctx, "test-project-id", event)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("PublishEvent() = nil, want an error (an unreachable broker can never succeed)")
+	}
+	// Generous upper bound (deadline + 1s), not an exact match — this
+	// asserts "bounded by ctx," not "bounded to the millisecond."
+	if elapsed > deadline+time.Second {
+		t.Errorf("PublishEvent() took %s, want at most ~%s (ctx.Done() should have ended it)", elapsed, deadline)
+	}
+}

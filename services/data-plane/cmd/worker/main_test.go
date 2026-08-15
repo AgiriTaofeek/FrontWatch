@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"testing"
+	"time"
 
+	chstorage "github.com/AgiriTaofeek/FrontWatch/services/data-plane/internal/storage/clickhouse"
 	"github.com/AgiriTaofeek/FrontWatch/services/data-plane/internal/telemetry"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
@@ -93,4 +97,64 @@ func TestProcessFetch_EmptyIsANoOp(t *testing.T) {
 	// called — this test fails with a nil-pointer panic if that early
 	// return is ever removed.
 	processFetch(t.Context(), nil, nil, newTestService(), nil)
+}
+
+// fakeBatchWriter simulates a ClickHouse that fails a fixed number of
+// times before succeeding — persistBatchWithRetry's own tests don't
+// need a real ClickHouse connection, just something that fails on
+// command (Failure recovery, PROGRESS.md's Step 9 entry: this is the
+// retry/backoff logic that closed the "a stuck batch was only ever
+// redelivered by luck or a restart" gap).
+type fakeBatchWriter struct {
+	failUntilAttempt int // WriteBatch fails for calls 1..failUntilAttempt, succeeds after
+	calls            int
+}
+
+func (f *fakeBatchWriter) WriteBatch(_ context.Context, _ []chstorage.StoredEvent) error {
+	f.calls++
+	if f.calls <= f.failUntilAttempt {
+		return errors.New("simulated ClickHouse failure")
+	}
+	return nil
+}
+
+// TestPersistBatchWithRetry_RecoversAfterTransientFailures proves the
+// core claim: a batch that fails is retried — not abandoned — and
+// succeeds automatically the moment the dependency recovers, with no
+// caller-visible error and no restart involved.
+func TestPersistBatchWithRetry_RecoversAfterTransientFailures(t *testing.T) {
+	writer := &fakeBatchWriter{failUntilAttempt: 2}
+	batch := []chstorage.StoredEvent{{Event: telemetry.Event{EventID: "evt_retry_test"}}}
+
+	err := persistBatchWithRetry(t.Context(), writer, batch, 10, 10)
+	if err != nil {
+		t.Fatalf("persistBatchWithRetry() = %v, want nil (should recover, not give up)", err)
+	}
+	if writer.calls != 3 {
+		t.Errorf("calls = %d, want 3 (2 failures + 1 success)", writer.calls)
+	}
+}
+
+// TestPersistBatchWithRetry_StopsOnShutdown proves the other half:
+// retrying is bounded by context cancellation (graceful shutdown), not
+// unbounded — a worker asked to stop while stuck retrying a batch must
+// actually stop, leaving that batch uncommitted for redelivery on the
+// next start, rather than blocking shutdown forever.
+func TestPersistBatchWithRetry_StopsOnShutdown(t *testing.T) {
+	writer := &fakeBatchWriter{failUntilAttempt: 1000} // never succeeds within this test
+	batch := []chstorage.StoredEvent{{Event: telemetry.Event{EventID: "evt_shutdown_test"}}}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	go func() {
+		time.Sleep(50 * time.Millisecond) // let the first attempt fail once
+		cancel()
+	}()
+
+	err := persistBatchWithRetry(ctx, writer, batch, 20, 20)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("persistBatchWithRetry() = %v, want %v", err, context.Canceled)
+	}
+	if writer.calls < 1 {
+		t.Error("calls = 0, want at least 1 attempt before shutdown was observed")
+	}
 }

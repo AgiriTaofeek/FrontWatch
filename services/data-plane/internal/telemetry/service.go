@@ -3,6 +3,8 @@ package telemetry
 import (
 	"context"
 	"errors"
+	"fmt"
+	"time"
 )
 
 // CredentialValidator resolves a public key to the project it belongs
@@ -20,6 +22,35 @@ type Publisher interface {
 }
 
 var ErrInvalidCredential = errors.New("invalid credential")
+
+// ErrDependencyUnavailable means the credential check itself couldn't
+// run — Postgres unreachable, a timeout, anything that isn't "this
+// specific key is wrong or disabled." Real chaos testing (Failure
+// recovery, PROGRESS.md's Step 9 entry) found a Postgres outage was
+// previously collapsed into ErrInvalidCredential, which the ingestion
+// HTTP handler mapped to 401 — indistinguishable from a genuinely bad
+// key. That mapping mattered beyond a wrong status code: 401 is one of
+// the statuses packages/sdk's transport.ts deliberately never retries
+// (a bad key retrying forever would be pointless), so a real Postgres
+// outage caused the SDK to silently drop events instead of retrying
+// them the way a 503 already tells it to. This sentinel is what lets
+// the credential-check failure path be told apart from the
+// bad-credential path, all the way out to the HTTP response.
+var ErrDependencyUnavailable = errors.New("dependency unavailable")
+
+// credentialCheckTimeout bounds how long a single request waits on
+// ValidateCredential. Without this, a Postgres connection stuck
+// somewhere between "not yet failed" and "not yet succeeded" (a
+// network partition, not the fast connection-refused a locally
+// stopped container produces — chaos testing here could only
+// reproduce the fast-fail case, not a true black hole) could hold an
+// ingestion request open indefinitely, the exact "no retry storms
+// during a FrontWatch outage" / bounded-latency failure mode
+// system-architecture.md warns about. Applied around the credential
+// check specifically (not the whole request) since that's the one
+// synchronous dependency call on ingestion's otherwise
+// enqueue-and-acknowledge path.
+const credentialCheckTimeout = 3 * time.Second
 
 type Rejection struct {
 	EventID string
@@ -52,9 +83,22 @@ func (s *IngestService) Ingest(ctx context.Context, publicKey string, req Ingest
 		return IngestResult{}, err
 	}
 
-	projectID, err := s.credentials.ValidateCredential(ctx, publicKey)
+	checkCtx, cancel := context.WithTimeout(ctx, credentialCheckTimeout)
+	defer cancel()
+
+	projectID, err := s.credentials.ValidateCredential(checkCtx, publicKey)
 	if err != nil {
-		return IngestResult{}, ErrInvalidCredential
+		if errors.Is(err, ErrInvalidCredential) {
+			return IngestResult{}, ErrInvalidCredential
+		}
+		// Anything else — a raw Postgres error, checkCtx's own deadline
+		// exceeded — is this dependency being unavailable, not the
+		// caller's key being wrong. CredentialValidator implementations
+		// are expected to return ErrInvalidCredential explicitly for a
+		// real not-found/inactive result (internal/storage/postgres does
+		// this at its own adapter boundary) and their own raw error
+		// otherwise, exactly so this distinction can be made here.
+		return IngestResult{}, fmt.Errorf("%w: %v", ErrDependencyUnavailable, err)
 	}
 
 	result := IngestResult{}

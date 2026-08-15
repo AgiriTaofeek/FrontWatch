@@ -19,10 +19,22 @@ var (
 		Help: "Total records successfully processed and persisted to ClickHouse.",
 	})
 
+	// recordsFailedTotal's "persist" reason is no longer used —
+	// persist failures now retry indefinitely (persistBatchWithRetry,
+	// Failure recovery, PROGRESS.md's Step 9 entry) rather than
+	// permanently giving up on a batch, so there's no "final" persist
+	// failure to count here. batchRetriesTotal below is what tracks
+	// persist trouble now: every failed attempt, whether or not it
+	// eventually recovers.
 	recordsFailedTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "worker_records_failed_total",
-		Help: "Total records that failed processing, by failure kind.",
+		Help: "Total records that failed processing (decode/validation — permanent failures only), by failure kind.",
 	}, []string{"reason"})
+
+	batchRetriesTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "worker_batch_retries_total",
+		Help: "Total failed ClickHouse batch-write attempts that were retried (not necessarily distinct batches — one stuck batch during an outage counts once per attempt).",
+	})
 
 	// batchPersistDuration replaces what used to be
 	// worker_processing_duration_seconds ("time to decode, process, and
@@ -52,6 +64,7 @@ func init() {
 		recordsConsumedTotal,
 		recordsProcessedTotal,
 		recordsFailedTotal,
+		batchRetriesTotal,
 		batchPersistDuration,
 		batchSize,
 	)

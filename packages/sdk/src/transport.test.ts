@@ -120,4 +120,32 @@ describe("Transport", () => {
 
 		expect(calls).toBe(2);
 	});
+
+	// Failure recovery (PROGRESS.md's Step 9 entry): ADR-006's "SDK must
+	// fail open" and legacy-docs/17-testing-and-quality/failure-testing.md's
+	// explicit requirement ("FrontWatch unavailable" must not become an
+	// application outage) were only ever exercised here via fetch calls
+	// that eventually succeed or a status that persists — never the case
+	// where FrontWatch is unreachable for the *entire* retry budget, i.e.
+	// a real, sustained outage. This is the one that matters most: proof
+	// that send()'s promise resolves cleanly (never rejects, never
+	// throws) even when every single attempt fails at the network level,
+	// not just when a status code persists.
+	it("resolves cleanly (never throws) when every attempt is a network failure — a sustained outage, not a transient one", async () => {
+		const fetchMock = mock(() => Promise.reject(new Error("network down")));
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+		const transport = new Transport({
+			endpoint: "http://x",
+			publicKey: "k",
+			maxRetries: 2,
+			baseDelayMs: 1,
+		});
+
+		await expect(transport.send([fakeEvent])).resolves.toBeUndefined();
+		// 1 initial attempt + 2 retries = 3 total calls, then a clean,
+		// silent give-up — never an unhandled rejection reaching the host
+		// application's own error handling.
+		expect(fetchMock).toHaveBeenCalledTimes(3);
+	});
 });

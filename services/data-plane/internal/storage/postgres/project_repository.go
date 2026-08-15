@@ -9,9 +9,12 @@ package postgres
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/AgiriTaofeek/FrontWatch/services/data-plane/internal/telemetry"
 )
 
 // ErrProjectNotFound covers both "no project has this key" and "the
@@ -55,13 +58,28 @@ func (r *ProjectCredentialRepository) FindActiveByPublicKey(ctx context.Context,
 }
 
 // ValidateCredential adapts FindActiveByPublicKey to the shape
-// internal/telemetry.CredentialValidator expects — this package never
-// imports telemetry (no reason to), it just happens to structurally
-// satisfy the interface telemetry defines on its own side.
+// internal/telemetry.CredentialValidator expects. This package does
+// import telemetry here — the one exception to "this package never
+// imports telemetry," and a deliberate one: an adapter translating its
+// own infrastructure-specific errors into the domain-level sentinels
+// the port it implements expects is exactly what an adapter is for
+// (the dependency still points inward, telemetry -> nothing in this
+// package). Real chaos testing (Failure recovery, PROGRESS.md's Step 9
+// entry) found that without this translation, a Postgres outage and a
+// genuinely wrong public key were indistinguishable by the time they
+// reached the HTTP layer — both collapsed into the same "invalid
+// credential" outcome. ErrProjectNotFound (a real not-found/inactive
+// result) becomes telemetry.ErrInvalidCredential; anything else (a raw
+// connection/timeout error) is returned as-is, for
+// telemetry.IngestService to recognize as ErrDependencyUnavailable
+// instead.
 func (r *ProjectCredentialRepository) ValidateCredential(ctx context.Context, publicKey string) (string, error) {
 	project, err := r.FindActiveByPublicKey(ctx, publicKey)
 	if err != nil {
-		return "", err
+		if errors.Is(err, ErrProjectNotFound) {
+			return "", telemetry.ErrInvalidCredential
+		}
+		return "", fmt.Errorf("checking project credential: %w", err)
 	}
 	return project.ID, nil
 }
