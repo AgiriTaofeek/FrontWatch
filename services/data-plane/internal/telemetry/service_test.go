@@ -115,7 +115,13 @@ func TestIngestService_Ingest(t *testing.T) {
 
 	t.Run("rejects the whole batch for an invalid credential", func(t *testing.T) {
 		publisher := &fakePublisher{}
-		service := NewIngestService(fakeCredentials{err: errors.New("not found")}, publisher)
+		// A CredentialValidator implementation is expected to return
+		// ErrInvalidCredential explicitly for a real not-found/inactive
+		// result (internal/storage/postgres does this at its own adapter
+		// boundary) — this fake mirrors that contract rather than
+		// returning an arbitrary error, which now means something
+		// different (see the dependency-unavailable test below).
+		service := NewIngestService(fakeCredentials{err: ErrInvalidCredential}, publisher)
 
 		_, err := service.Ingest(context.Background(), "fw_pk_bad", validRequest())
 		if !errors.Is(err, ErrInvalidCredential) {
@@ -123,6 +129,29 @@ func TestIngestService_Ingest(t *testing.T) {
 		}
 		if len(publisher.published) != 0 {
 			t.Fatalf("published %d events, want 0 (credential was invalid)", len(publisher.published))
+		}
+	})
+
+	// Real chaos testing (Failure recovery, PROGRESS.md's Step 9 entry)
+	// found a Postgres outage was previously indistinguishable from a
+	// genuinely bad credential — both collapsed into ErrInvalidCredential,
+	// which the ingestion HTTP handler mapped to a non-retryable 401.
+	// Any error a CredentialValidator returns that ISN'T
+	// ErrInvalidCredential now means "the check itself failed," not
+	// "the key is wrong."
+	t.Run("distinguishes a dependency failure from an invalid credential", func(t *testing.T) {
+		publisher := &fakePublisher{}
+		service := NewIngestService(fakeCredentials{err: errors.New("connection refused")}, publisher)
+
+		_, err := service.Ingest(context.Background(), "fw_pk_valid", validRequest())
+		if !errors.Is(err, ErrDependencyUnavailable) {
+			t.Fatalf("Ingest() = %v, want %v", err, ErrDependencyUnavailable)
+		}
+		if errors.Is(err, ErrInvalidCredential) {
+			t.Fatalf("Ingest() = %v, must not also be ErrInvalidCredential — the SDK treats that as non-retryable", err)
+		}
+		if len(publisher.published) != 0 {
+			t.Fatalf("published %d events, want 0 (credential check never completed)", len(publisher.published))
 		}
 	})
 

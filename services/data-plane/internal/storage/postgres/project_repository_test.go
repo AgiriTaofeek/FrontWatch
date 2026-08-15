@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/AgiriTaofeek/FrontWatch/services/data-plane/internal/telemetry"
 )
 
 // Integration test — hits the real local Postgres (same one Bun/Drizzle
@@ -103,6 +105,37 @@ func TestProjectCredentialRepository_FindActiveByPublicKey(t *testing.T) {
 		_, err := repo.FindActiveByPublicKey(context.Background(), "fw_pk_does_not_exist")
 		if !errors.Is(err, ErrProjectNotFound) {
 			t.Fatalf("FindActiveByPublicKey() = %v, want %v", err, ErrProjectNotFound)
+		}
+	})
+}
+
+// TestProjectCredentialRepository_ValidateCredential covers the
+// adapter-boundary translation this package added for Failure recovery
+// (PROGRESS.md's Step 9 entry): ValidateCredential must return
+// telemetry.ErrInvalidCredential for a real not-found/inactive result
+// specifically, not just any error — internal/telemetry.IngestService
+// relies on that exact sentinel to tell "bad key" apart from "the
+// dependency check itself failed."
+func TestProjectCredentialRepository_ValidateCredential(t *testing.T) {
+	pool := testPool(t)
+	repo := NewProjectCredentialRepository(pool)
+
+	t.Run("returns the project id for a real active key", func(t *testing.T) {
+		id := insertTestProject(t, pool, "fw_pk_test_validate_active", "active")
+
+		gotID, err := repo.ValidateCredential(context.Background(), "fw_pk_test_validate_active")
+		if err != nil {
+			t.Fatalf("ValidateCredential() = %v, want nil", err)
+		}
+		if gotID != id {
+			t.Errorf("id = %q, want %q", gotID, id)
+		}
+	})
+
+	t.Run("translates a not-found key to telemetry.ErrInvalidCredential", func(t *testing.T) {
+		_, err := repo.ValidateCredential(context.Background(), "fw_pk_does_not_exist_validate")
+		if !errors.Is(err, telemetry.ErrInvalidCredential) {
+			t.Fatalf("ValidateCredential() = %v, want %v", err, telemetry.ErrInvalidCredential)
 		}
 	})
 }
