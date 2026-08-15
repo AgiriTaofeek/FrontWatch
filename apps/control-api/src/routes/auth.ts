@@ -14,7 +14,7 @@ import {
 	sessionExpiry,
 	verifyPassword,
 } from "../lib/auth";
-import { resolveSessionPrincipal } from "../lib/sessionPrincipal";
+import { authPlugin } from "../lib/authPlugin";
 
 // Step 9's first auth slice (ADR-027): local email+password, session
 // cookies. This PR builds identity + the session mechanism only —
@@ -44,6 +44,7 @@ const sessionCookieSchema = t.Cookie({
 });
 
 export const authRoutes = new Elysia()
+	.use(authPlugin())
 	.post(
 		"/auth/register",
 		async ({ body, cookie, status }) => {
@@ -160,16 +161,13 @@ export const authRoutes = new Elysia()
 		},
 		{ cookie: sessionCookieSchema },
 	)
-	.get(
-		"/auth/me",
-		async ({ cookie, status }) => {
-			const principal = await resolveSessionPrincipal(
-				cookie[SESSION_COOKIE_NAME].value,
-			);
-			if (!principal) {
-				return status(401, { error: "not authenticated" });
-			}
-			return principal;
-		},
-		{ cookie: sessionCookieSchema },
-	);
+	.get("/auth/me", async ({ principal, status }) => {
+		// `principal` is derived globally (lib/authPlugin.ts, mounted in
+		// index.ts) — this route doesn't re-derive it itself, the same
+		// single-lookup-per-request principle every other protected
+		// route now follows too.
+		if (!principal) {
+			return status(401, { error: "not authenticated" });
+		}
+		return principal;
+	});

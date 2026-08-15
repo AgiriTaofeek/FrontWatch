@@ -1,11 +1,21 @@
 import { Elysia, t } from "elysia";
 import { listNetworkResources } from "../db/network";
+import { authorizeProjectAccess } from "../lib/authorization";
+import { authPlugin } from "../lib/authPlugin";
 
-// No auth/RBAC yet, same scope note as issues.ts/projects.ts
-// (PROGRESS.md Step 2) — deferred to Step 9, not an oversight.
-export const networkRoutes = new Elysia().get(
+// Step 9's RBAC-enforcement slice, same shape as issues.ts.
+export const networkRoutes = new Elysia().use(authPlugin()).get(
 	"/projects/:projectId/network",
-	async ({ params, query }) => {
+	async ({ params, principal, query, status }) => {
+		const auth = await authorizeProjectAccess(
+			principal,
+			params.projectId,
+			"viewer",
+		);
+		if (!auth.ok) {
+			return status(auth.status, { error: auth.error });
+		}
+
 		const resources = await listNetworkResources(params.projectId, {
 			route: query.route,
 			from: query.from,

@@ -1,12 +1,13 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
+import { seedTestOrganization } from "../testHelpers/auth";
 import {
 	listEnabledErrorSpikeRules,
 	listEnabledNewIssueRules,
 	listEnabledPerformanceRegressionRules,
 } from "./alertRules";
 import { db } from "./client";
-import { alertRules, projects } from "./schema";
+import { alertRules, organizations, projects } from "./schema";
 
 // Integration test — hits the real local Postgres. Not scoped to a
 // single project (unlike most of this codebase's other integration
@@ -15,7 +16,9 @@ import { alertRules, projects } from "./schema";
 // pass, not one project at a time.
 
 let projectId: string;
+let organizationId: string;
 const createdRuleIds: string[] = [];
+const createdOrganizationIds: string[] = [];
 
 afterAll(async () => {
 	for (const id of createdRuleIds) {
@@ -24,13 +27,25 @@ afterAll(async () => {
 	if (projectId) {
 		await db.delete(projects).where(eq(projects.id, projectId));
 	}
+	if (organizationId) {
+		createdOrganizationIds.push(organizationId);
+	}
+	for (const id of createdOrganizationIds) {
+		await db.delete(organizations).where(eq(organizations.id, id));
+	}
 });
 
 describe("listEnabledNewIssueRules", () => {
 	it("only returns enabled new_issue rules, not disabled ones", async () => {
+		const organization = await seedTestOrganization();
+		organizationId = organization.id;
+
 		const [project] = await db
 			.insert(projects)
-			.values({ publicKey: `fw_pk_alert_rules_db_test_${Date.now()}` })
+			.values({
+				organizationId,
+				publicKey: `fw_pk_alert_rules_db_test_${Date.now()}`,
+			})
 			.returning();
 		if (!project) throw new Error("failed to seed test project");
 		projectId = project.id;
@@ -66,9 +81,13 @@ describe("listEnabledNewIssueRules", () => {
 
 describe("listEnabledErrorSpikeRules", () => {
 	it("returns only enabled error_spike rules with their threshold/window", async () => {
+		const organization = await seedTestOrganization();
 		const [project] = await db
 			.insert(projects)
-			.values({ publicKey: `fw_pk_error_spike_db_test_${Date.now()}` })
+			.values({
+				organizationId: organization.id,
+				publicKey: `fw_pk_error_spike_db_test_${Date.now()}`,
+			})
 			.returning();
 		if (!project) throw new Error("failed to seed test project");
 
@@ -106,15 +125,22 @@ describe("listEnabledErrorSpikeRules", () => {
 			await db.delete(alertRules).where(eq(alertRules.id, rule.id));
 			await db.delete(alertRules).where(eq(alertRules.id, otherTypeRule.id));
 			await db.delete(projects).where(eq(projects.id, project.id));
+			await db
+				.delete(organizations)
+				.where(eq(organizations.id, organization.id));
 		}
 	});
 });
 
 describe("listEnabledPerformanceRegressionRules", () => {
 	it("returns only enabled performance_regression rules with their metric/threshold/window", async () => {
+		const organization = await seedTestOrganization();
 		const [project] = await db
 			.insert(projects)
-			.values({ publicKey: `fw_pk_perf_regression_db_test_${Date.now()}` })
+			.values({
+				organizationId: organization.id,
+				publicKey: `fw_pk_perf_regression_db_test_${Date.now()}`,
+			})
 			.returning();
 		if (!project) throw new Error("failed to seed test project");
 
@@ -142,6 +168,9 @@ describe("listEnabledPerformanceRegressionRules", () => {
 		} finally {
 			await db.delete(alertRules).where(eq(alertRules.id, rule.id));
 			await db.delete(projects).where(eq(projects.id, project.id));
+			await db
+				.delete(organizations)
+				.where(eq(organizations.id, organization.id));
 		}
 	});
 });

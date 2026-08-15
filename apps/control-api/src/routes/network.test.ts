@@ -1,9 +1,23 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { clickhouse } from "../db/clickhouse";
+import { db } from "../db/client";
+import { projects } from "../db/schema";
+import {
+	cleanupTestPrincipal,
+	registerTestPrincipal,
+	seedTestProject,
+} from "../testHelpers/auth";
 import { networkRoutes } from "./network";
 
-const projectId = randomUUID();
+// Step 9's RBAC-enforcement slice — see issues.test.ts's own comment
+// for why a real Postgres project row (not a bare randomUUID()) is
+// now required.
+
+const principal = await registerTestPrincipal();
+const project = await seedTestProject(principal.organizationId);
+const projectId = project.id;
 const eventId = `evt_net_route_test_${Date.now()}`;
 
 async function seedEvent() {
@@ -39,6 +53,8 @@ afterAll(async () => {
 	await clickhouse.command({
 		query: `ALTER TABLE events DELETE WHERE event_id = '${eventId}'`,
 	});
+	await db.delete(projects).where(eq(projects.id, projectId));
+	await cleanupTestPrincipal(principal);
 });
 
 describe("GET /projects/:projectId/network", () => {
@@ -46,7 +62,9 @@ describe("GET /projects/:projectId/network", () => {
 		await seedEvent();
 
 		const response = await networkRoutes.handle(
-			new Request(`http://localhost/projects/${projectId}/network`),
+			new Request(`http://localhost/projects/${projectId}/network`, {
+				headers: { Cookie: principal.cookie },
+			}),
 		);
 		const body = await response.json();
 
@@ -58,12 +76,34 @@ describe("GET /projects/:projectId/network", () => {
 	});
 
 	it("returns an empty list for a project with no network events", async () => {
+		const otherProject = await seedTestProject(principal.organizationId);
+
 		const response = await networkRoutes.handle(
-			new Request(`http://localhost/projects/${randomUUID()}/network`),
+			new Request(`http://localhost/projects/${otherProject.id}/network`, {
+				headers: { Cookie: principal.cookie },
+			}),
 		);
 		const body = await response.json();
 
 		expect(response.status).toBe(200);
 		expect(body.resources).toHaveLength(0);
+
+		await db.delete(projects).where(eq(projects.id, otherProject.id));
+	});
+
+	it("returns 401 without a session", async () => {
+		const response = await networkRoutes.handle(
+			new Request(`http://localhost/projects/${projectId}/network`),
+		);
+		expect(response.status).toBe(401);
+	});
+
+	it("returns 404 for a project that doesn't exist", async () => {
+		const response = await networkRoutes.handle(
+			new Request(`http://localhost/projects/${randomUUID()}/network`, {
+				headers: { Cookie: principal.cookie },
+			}),
+		);
+		expect(response.status).toBe(404);
 	});
 });

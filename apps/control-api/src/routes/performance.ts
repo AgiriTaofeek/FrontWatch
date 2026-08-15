@@ -1,12 +1,21 @@
 import { Elysia, t } from "elysia";
 import { listPerformanceMetrics } from "../db/performance";
+import { authorizeProjectAccess } from "../lib/authorization";
+import { authPlugin } from "../lib/authPlugin";
 
-// No auth/RBAC yet, same scope note as issues.ts/network.ts/
-// sessions.ts/projects.ts (PROGRESS.md Step 2) — deferred to Step 9,
-// not an oversight.
-export const performanceRoutes = new Elysia().get(
+// Step 9's RBAC-enforcement slice, same shape as issues.ts/network.ts.
+export const performanceRoutes = new Elysia().use(authPlugin()).get(
 	"/projects/:projectId/performance",
-	async ({ params, query }) => {
+	async ({ params, principal, query, status }) => {
+		const auth = await authorizeProjectAccess(
+			principal,
+			params.projectId,
+			"viewer",
+		);
+		if (!auth.ok) {
+			return status(auth.status, { error: auth.error });
+		}
+
 		const metrics = await listPerformanceMetrics(params.projectId, {
 			route: query.route,
 			from: query.from,

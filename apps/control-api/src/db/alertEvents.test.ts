@@ -1,8 +1,9 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
+import { seedTestOrganization } from "../testHelpers/auth";
 import { markAlertEventNotified, recordAlertEvent } from "./alertEvents";
 import { db } from "./client";
-import { alertEvents, alertRules, projects } from "./schema";
+import { alertEvents, alertRules, organizations, projects } from "./schema";
 
 // Integration test — hits the real local Postgres. The dedup
 // constraint itself lives in schema.ts (unique(alert_rule_id,
@@ -10,6 +11,7 @@ import { alertEvents, alertRules, projects } from "./schema";
 // recordAlertEvent/markAlertEventNotified's own behavior around it.
 
 let projectId: string;
+let organizationId: string;
 const createdRuleIds: string[] = [];
 const createdEventIds: string[] = [];
 
@@ -25,13 +27,22 @@ afterAll(async () => {
 	if (projectId) {
 		await db.delete(projects).where(eq(projects.id, projectId));
 	}
+	if (organizationId) {
+		await db.delete(organizations).where(eq(organizations.id, organizationId));
+	}
 });
 
 describe("recordAlertEvent / markAlertEventNotified", () => {
 	it("inserts a new event and returns its id", async () => {
+		const organization = await seedTestOrganization();
+		organizationId = organization.id;
+
 		const [project] = await db
 			.insert(projects)
-			.values({ publicKey: `fw_pk_alert_events_test_${Date.now()}` })
+			.values({
+				organizationId,
+				publicKey: `fw_pk_alert_events_test_${Date.now()}`,
+			})
 			.returning();
 		if (!project) throw new Error("failed to seed test project");
 		projectId = project.id;

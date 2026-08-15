@@ -1,10 +1,11 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
+import { seedTestOrganization } from "../testHelpers/auth";
 import { clickhouse } from "./clickhouse";
 import { db } from "./client";
 import { getReleaseHealth } from "./releaseHealth";
-import { projects, releases } from "./schema";
+import { organizations, projects, releases } from "./schema";
 
 // Integration test — hits both real local Postgres (the release row)
 // and real local ClickHouse (the telemetry it's joined against), same
@@ -12,6 +13,7 @@ import { projects, releases } from "./schema";
 
 const version = "1.5.0";
 let projectId: string;
+let organizationId: string;
 const createdReleaseIds: string[] = [];
 const insertedEventIds: string[] = [];
 
@@ -59,6 +61,9 @@ afterAll(async () => {
 	if (projectId) {
 		await db.delete(projects).where(eq(projects.id, projectId));
 	}
+	if (organizationId) {
+		await db.delete(organizations).where(eq(organizations.id, organizationId));
+	}
 });
 
 describe("getReleaseHealth", () => {
@@ -68,9 +73,15 @@ describe("getReleaseHealth", () => {
 	});
 
 	it("joins the Postgres release row against ClickHouse telemetry filtered to that release", async () => {
+		const organization = await seedTestOrganization();
+		organizationId = organization.id;
+
 		const [project] = await db
 			.insert(projects)
-			.values({ publicKey: `fw_pk_release_health_${Date.now()}` })
+			.values({
+				organizationId,
+				publicKey: `fw_pk_release_health_${Date.now()}`,
+			})
 			.returning();
 		if (!project) throw new Error("failed to seed test project");
 		projectId = project.id;

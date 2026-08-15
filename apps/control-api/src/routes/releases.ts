@@ -3,13 +3,27 @@ import { Elysia, t } from "elysia";
 import { db } from "../db/client";
 import { getReleaseHealth } from "../db/releaseHealth";
 import { releases } from "../db/schema";
+import { authorizeProjectAccess } from "../lib/authorization";
+import { authPlugin } from "../lib/authPlugin";
 
-// No auth/RBAC yet, same scope note as projects.ts/issues.ts
-// (PROGRESS.md Step 2) — deferred to Step 9, not an oversight.
+// Step 9's RBAC-enforcement slice: "engineer" or higher to record a
+// release (a real write with operational consequences — it's what
+// release-health tracking keys off), "viewer" (any active member) to
+// read.
 export const releasesRoutes = new Elysia()
+	.use(authPlugin())
 	.post(
 		"/projects/:projectId/releases",
-		async ({ params, body, status }) => {
+		async ({ params, body, principal, status }) => {
+			const auth = await authorizeProjectAccess(
+				principal,
+				params.projectId,
+				"engineer",
+			);
+			if (!auth.ok) {
+				return status(auth.status, { error: auth.error });
+			}
+
 			const [release] = await db
 				.insert(releases)
 				.values({
@@ -51,7 +65,16 @@ export const releasesRoutes = new Elysia()
 	)
 	.get(
 		"/projects/:projectId/releases",
-		async ({ params }) => {
+		async ({ params, principal, status }) => {
+			const auth = await authorizeProjectAccess(
+				principal,
+				params.projectId,
+				"viewer",
+			);
+			if (!auth.ok) {
+				return status(auth.status, { error: auth.error });
+			}
+
 			const rows = await db
 				.select()
 				.from(releases)
@@ -70,7 +93,16 @@ export const releasesRoutes = new Elysia()
 	)
 	.get(
 		"/projects/:projectId/releases/:version/health",
-		async ({ params, status }) => {
+		async ({ params, principal, status }) => {
+			const auth = await authorizeProjectAccess(
+				principal,
+				params.projectId,
+				"viewer",
+			);
+			if (!auth.ok) {
+				return status(auth.status, { error: auth.error });
+			}
+
 			const health = await getReleaseHealth(params.projectId, params.version);
 			if (!health) {
 				return status(404, { error: "release not found" });
