@@ -16,6 +16,7 @@
 		"prepare": "husky",
 		"backup:postgres": "./scripts/backup-postgres.sh",
 		"restore:postgres": "./scripts/restore-postgres.sh",
-		"verify:postgres-backup": "./scripts/verify-postgres-backup.sh"
+		"verify:postgres-backup": "./scripts/verify-postgres-backup.sh",
+		"loadtest": "./loadtest/run.sh"
 	}
 }

@@ -28,6 +28,12 @@
 | [022](ADR-022-ingestion-postgres-access.md) | Go ingestion reads Postgres directly (read-only) | Accepted — resolves an explicitly open question in code-structure.md |
 | [023](ADR-023-derived-issue-aggregation.md) | Issues derived by query, not a materialized table | Accepted |
 | [024](ADR-024-tanstack-start-dashboard.md) | TanStack Start for the dashboard | Accepted — resolves tech-stack.md's open frontend-router question |
+| [025](ADR-025-alert-evaluation-in-typescript.md) | Alert evaluation runs in TypeScript (control-api), not Go | Accepted |
+| [026](ADR-026-prometheus-metrics.md) | Prometheus exposition format for metrics | Accepted |
+| [027](ADR-027-local-password-session-auth.md) | Local email+password session auth for the first slice (OIDC deferred) | Accepted |
+| [028](ADR-028-k6-load-testing.md) | k6 for load testing | Accepted |
+
+*(Rows 025–027 were added in this pass — the table had drifted out of sync with `docs/decisions/`'s actual file listing across a few prior PRs; not a regression from this one.)*
 
 ## Genuinely still open (not yet an ADR)
 

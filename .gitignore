@@ -17,3 +17,10 @@ apps/web/dist/
 # committed, same reasoning as .env*: real customer data, even in a
 # local dev backup, doesn't belong in source control.
 backups/
+
+# Load-testing session state and raw run output (loadtest/run.sh) —
+# point-in-time local numbers, not something to commit and let go
+# stale. .session also carries a live session cookie, same
+# secrets-don't-belong-in-source-control reasoning as .env*.
+loadtest/.session
+loadtest/results/
