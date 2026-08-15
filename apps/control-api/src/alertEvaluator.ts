@@ -6,14 +6,26 @@
 // runs continuously as its own process (same "one binary per concern"
 // pattern services/data-plane's cmd/ingestion vs cmd/worker already
 // established, just in TypeScript).
+import { sql } from "drizzle-orm";
+import { Elysia } from "elysia";
+import {
+	cycleDuration,
+	cyclesRunTotal,
+	notificationsSentTotal,
+	registry,
+	rulesEvaluatedTotal,
+} from "./alertEvaluatorMetrics";
 import { markAlertEventNotified, recordAlertEvent } from "./db/alertEvents";
 import {
 	listEnabledErrorSpikeRules,
 	listEnabledNewIssueRules,
 	listEnabledPerformanceRegressionRules,
 } from "./db/alertRules";
+import { clickhouse } from "./db/clickhouse";
+import { db } from "./db/client";
 import { countRecentErrors, listNewIssues } from "./db/issues";
 import { getRecentMetricWindow } from "./db/performance";
+import { healthRoutes } from "./lib/health";
 import { deliverWebhook } from "./lib/webhook";
 
 export interface EvaluationCycleResult {
@@ -211,6 +223,7 @@ export async function runAlertEvaluationCycle(
 }
 
 const DEFAULT_POLL_INTERVAL_MS = 30_000;
+const DEFAULT_METRICS_PORT = 9091;
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
 	return new Promise((resolve) => {
@@ -220,6 +233,43 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 			resolve();
 		});
 	});
+}
+
+// ADR-026: the alert-evaluator's own /health/live, /health/ready
+// (same Postgres + ClickHouse checks control-api's index.ts uses —
+// this process reads both), and /metrics — its first HTTP server ever
+// (previously nothing listened on any port; it's a pure poll loop).
+// Separate from control-api's own metricsPlugin (lib/metrics.ts,
+// HTTP-request metrics for a different process entirely) — this one
+// exposes alertEvaluatorMetrics.ts's cycle/rule/notification counters
+// instead.
+function startMetricsServer() {
+	const port = Number(
+		process.env.ALERT_EVALUATOR_METRICS_PORT ?? DEFAULT_METRICS_PORT,
+	);
+
+	const app = new Elysia()
+		.use(
+			healthRoutes({
+				postgres: async () => {
+					await db.execute(sql`select 1`);
+				},
+				clickhouse: async () => {
+					const result = await clickhouse.ping({ select: true });
+					if (!result.success) {
+						throw result.error;
+					}
+				},
+			}),
+		)
+		.get("/metrics", async ({ set }) => {
+			set.headers["Content-Type"] = registry.contentType;
+			return registry.metrics();
+		})
+		.listen(port);
+
+	console.log(`alert-evaluator metrics listening on :${port}`);
+	return app;
 }
 
 // operations.md: "shutdown must never hang indefinitely" — same
@@ -234,11 +284,28 @@ if (import.meta.main) {
 	process.on("SIGINT", () => controller.abort());
 	process.on("SIGTERM", () => controller.abort());
 
+	const metricsServer = startMetricsServer();
+
 	console.log(`alert-evaluator polling every ${pollIntervalMs}ms`);
 
 	while (!controller.signal.aborted) {
 		try {
+			const cycleStart = performance.now();
 			const result = await runAlertEvaluationCycle();
+			cycleDuration.observe((performance.now() - cycleStart) / 1000);
+
+			cyclesRunTotal.inc();
+			rulesEvaluatedTotal.inc(result.rulesEvaluated);
+			notificationsSentTotal.inc({ type: "new_issue" }, result.issuesNotified);
+			notificationsSentTotal.inc(
+				{ type: "error_spike" },
+				result.errorSpikesNotified,
+			);
+			notificationsSentTotal.inc(
+				{ type: "performance_regression" },
+				result.performanceRegressionsNotified,
+			);
+
 			const totalNotified =
 				result.issuesNotified +
 				result.errorSpikesNotified +
@@ -260,5 +327,6 @@ if (import.meta.main) {
 		await sleep(pollIntervalMs, controller.signal);
 	}
 
+	await metricsServer.stop();
 	console.log("alert-evaluator shut down");
 }

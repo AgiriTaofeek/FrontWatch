@@ -1,4 +1,9 @@
+import { sql } from "drizzle-orm";
 import { Elysia } from "elysia";
+import { clickhouse } from "./db/clickhouse";
+import { db } from "./db/client";
+import { healthRoutes } from "./lib/health";
+import { metricsPlugin } from "./lib/metrics";
 import { alertRulesRoutes } from "./routes/alertRules";
 import { issuesRoutes } from "./routes/issues";
 import { networkRoutes } from "./routes/network";
@@ -13,14 +18,40 @@ import { sessionsRoutes } from "./routes/sessions";
 // route-level tests (projects.test.ts) can keep testing against
 // unprefixed paths by calling the route module directly instead of
 // going through this composition.
-export const app = new Elysia({ prefix: "/api/v1" })
+const api = new Elysia({ prefix: "/api/v1" })
 	.use(projectsRoutes)
 	.use(issuesRoutes)
 	.use(networkRoutes)
 	.use(sessionsRoutes)
 	.use(performanceRoutes)
 	.use(releasesRoutes)
-	.use(alertRulesRoutes)
+	.use(alertRulesRoutes);
+
+// health/metrics are mounted on the *unprefixed* root instance, not
+// merged into `api` above — confirmed empirically that a plugin
+// merged via .use() inherits its parent Elysia instance's prefix, so
+// nesting them inside `api` would produce /api/v1/health/live, which
+// no orchestrator or `docker healthcheck` config expects (ADR-026).
+export const app = new Elysia()
+	.use(metricsPlugin())
+	.use(
+		healthRoutes({
+			postgres: async () => {
+				await db.execute(sql`select 1`);
+			},
+			clickhouse: async () => {
+				// select: true forces a real query instead of the bare
+				// /ping endpoint, which "does not verify credentials" per
+				// @clickhouse/client's own docs — a readiness check that
+				// can't catch a credentials problem isn't verifying much.
+				const result = await clickhouse.ping({ select: true });
+				if (!result.success) {
+					throw result.error;
+				}
+			},
+		}),
+	)
+	.use(api)
 	.listen(3000);
 
 console.log(
