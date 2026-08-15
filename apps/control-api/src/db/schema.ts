@@ -175,6 +175,126 @@ export const alertRules = pgTable("alert_rules", {
 		.defaultNow(),
 });
 
+// Step 9's first auth slice (ADR-027: local email+password, OIDC
+// deferred). data-model.md §1's Organization/User/Membership model,
+// built for real now — project_id has been the only actual tenant
+// boundary up to this point (every route's own "no auth/RBAC yet"
+// comment), this is what replaces that.
+//
+// One status enum per entity (not one shared enum), matching
+// projectStatus's own precedent — organizations/users/memberships
+// each have their own independent lifecycle even though the values
+// happen to overlap today.
+export const organizationStatus = pgEnum("organization_status", [
+	"active",
+	"disabled",
+]);
+export const userStatus = pgEnum("user_status", ["active", "disabled"]);
+export const membershipStatus = pgEnum("membership_status", [
+	"active",
+	"disabled",
+]);
+
+// api-contracts.md / auth.md's three roles. A real enum, not a bare
+// string, same reasoning alertRuleType/alertEventState already
+// established — "future: custom roles" (tech-stack.md) is real later
+// work, not something a bare string would make meaningfully easier to
+// add anyway (still a migration either way).
+export const membershipRole = pgEnum("membership_role", [
+	"administrator",
+	"engineer",
+	"viewer",
+]);
+
+export const organizations = pgTable("organizations", {
+	id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+
+	name: text("name").notNull(),
+	status: organizationStatus("status").notNull().default("active"),
+
+	createdAt: timestamp("created_at", { withTimezone: true })
+		.notNull()
+		.defaultNow(),
+	updatedAt: timestamp("updated_at", { withTimezone: true })
+		.notNull()
+		.defaultNow(),
+});
+
+export const users = pgTable("users", {
+	id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+
+	email: text("email").notNull().unique(),
+	name: text("name").notNull(),
+	// ADR-027: Bun.password (argon2id, Bun's own default) — verified
+	// directly against a real password round-trip before adopting it,
+	// not assumed from docs. Never logged (auth.md's explicit
+	// requirement) — nothing in this codebase logs request bodies.
+	passwordHash: text("password_hash").notNull(),
+	status: userStatus("status").notNull().default("active"),
+
+	createdAt: timestamp("created_at", { withTimezone: true })
+		.notNull()
+		.defaultNow(),
+	updatedAt: timestamp("updated_at", { withTimezone: true })
+		.notNull()
+		.defaultNow(),
+});
+
+// The join table carrying `role` — data-model.md §1 names this
+// exactly. US-01.01: "creating an org makes the creator an
+// Administrator" — registration (routes/auth.ts) creates exactly one
+// of these, with role "administrator", atomically with the
+// organization and user rows.
+export const memberships = pgTable(
+	"memberships",
+	{
+		id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+
+		organizationId: uuid("organization_id")
+			.notNull()
+			.references(() => organizations.id),
+		userId: uuid("user_id")
+			.notNull()
+			.references(() => users.id),
+
+		role: membershipRole("role").notNull(),
+		status: membershipStatus("status").notNull().default("active"),
+
+		createdAt: timestamp("created_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
+	},
+	(table) => [
+		// data-model.md §1's own constraint: one user can't hold two
+		// memberships in the same organization.
+		unique().on(table.organizationId, table.userId),
+	],
+);
+
+// ADR-027: a server-side session, not a stateless JWT — auth.md's
+// "revocation" requirement is real and immediate with a row to delete.
+// tokenHash, not the raw token: the same reasoning passwordHash is
+// hashed, not stored raw — a leaked database shouldn't hand out
+// ready-to-use bearer credentials for every logged-in user. SHA-256
+// (not argon2) is the right tool here specifically because a session
+// token is already high-entropy random, unlike a human-chosen
+// password — argon2's deliberate slowness defends against guessing a
+// low-entropy secret, which doesn't apply to a 256-bit random value.
+export const authSessions = pgTable("auth_sessions", {
+	id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+
+	userId: uuid("user_id")
+		.notNull()
+		.references(() => users.id),
+
+	tokenHash: text("token_hash").notNull().unique(),
+	expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+
+	createdAt: timestamp("created_at", { withTimezone: true })
+		.notNull()
+		.defaultNow(),
+});
+
 // One row per (rule, issue) firing — the alert-worker's own dedup
 // record (US-13.02: "repeated evaluations do not create uncontrolled
 // duplicate notifications"). fingerprint is the issue's stable
