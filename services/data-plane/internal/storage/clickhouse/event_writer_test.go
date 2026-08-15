@@ -223,3 +223,125 @@ func TestEventWriter_WriteEvent_PerformanceEvent(t *testing.T) {
 		t.Errorf("payload = %q, want it to contain the performance payload's metric_name", gotPayload)
 	}
 }
+
+// TestEventWriter_WriteBatch covers the Step 9 Load testing follow-up
+// (PROGRESS.md): cmd/worker now writes a whole fetch's worth of events
+// in one PrepareBatch/Append/Send round trip instead of one INSERT per
+// event. Three different event types in one batch — proves Append
+// handles the discriminated payload correctly for every variant, not
+// just whichever one happens to be first.
+func TestEventWriter_WriteBatch(t *testing.T) {
+	addr := os.Getenv("CLICKHOUSE_ADDR")
+	if addr == "" {
+		t.Skip("CLICKHOUSE_ADDR not set, skipping ClickHouse integration test")
+	}
+
+	conn, err := NewConnection(addr,
+		os.Getenv("CLICKHOUSE_DATABASE"),
+		os.Getenv("CLICKHOUSE_USERNAME"),
+		os.Getenv("CLICKHOUSE_PASSWORD"),
+	)
+	if err != nil {
+		t.Fatalf("NewConnection() = %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	writer := NewEventWriter(conn)
+	stamp := time.Now().Format(time.RFC3339Nano)
+
+	batch := []StoredEvent{
+		{
+			Event: telemetry.Event{
+				EventID:       "evt_ch_batch_err_" + stamp,
+				EventType:     telemetry.EventTypeError,
+				SchemaVersion: 1,
+				Timestamp:     time.Now().UTC().Truncate(time.Millisecond),
+				ErrorPayload: &telemetry.ErrorPayload{
+					Message:       "batch write test",
+					ExceptionType: "BatchTestError",
+					Handled:       true,
+				},
+			},
+			ProjectID:        "proj_ch_batch_test",
+			ServerReceivedAt: time.Now().UTC().Truncate(time.Millisecond),
+		},
+		{
+			Event: telemetry.Event{
+				EventID:       "evt_ch_batch_net_" + stamp,
+				EventType:     telemetry.EventTypeNetwork,
+				SchemaVersion: 1,
+				Timestamp:     time.Now().UTC().Truncate(time.Millisecond),
+				NetworkPayload: &telemetry.NetworkPayload{
+					Method: "GET", Resource: "/api/batch", Status: 200, DurationMs: 5, Outcome: "success",
+				},
+			},
+			ProjectID:        "proj_ch_batch_test",
+			ServerReceivedAt: time.Now().UTC().Truncate(time.Millisecond),
+		},
+		{
+			Event: telemetry.Event{
+				EventID:       "evt_ch_batch_perf_" + stamp,
+				EventType:     telemetry.EventTypePerformance,
+				SchemaVersion: 1,
+				Timestamp:     time.Now().UTC().Truncate(time.Millisecond),
+				PerformancePayload: &telemetry.PerformancePayload{
+					MetricName: "CLS", Value: 0.02, Rating: "good",
+				},
+			},
+			ProjectID:        "proj_ch_batch_test",
+			ServerReceivedAt: time.Now().UTC().Truncate(time.Millisecond),
+		},
+	}
+
+	ctx := context.Background()
+	if err := writer.WriteBatch(ctx, batch); err != nil {
+		t.Fatalf("WriteBatch() = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = conn.Exec(context.Background(), "ALTER TABLE events DELETE WHERE project_id = ?", "proj_ch_batch_test")
+	})
+
+	rows, err := conn.Query(ctx, `SELECT event_id FROM events WHERE project_id = ? ORDER BY event_id`, "proj_ch_batch_test")
+	if err != nil {
+		t.Fatalf("querying batch: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var gotIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatalf("scanning row: %v", err)
+		}
+		gotIDs = append(gotIDs, id)
+	}
+	if len(gotIDs) != len(batch) {
+		t.Fatalf("got %d rows, want %d (ids: %v)", len(gotIDs), len(batch), gotIDs)
+	}
+}
+
+// TestEventWriter_WriteBatch_Empty guards processFetch's "nothing to
+// persist" path (cmd/worker/main.go) — a batch of zero events must be
+// a no-op, not a PrepareBatch call with nothing ever Appended (which
+// ClickHouse's Send() would reject).
+func TestEventWriter_WriteBatch_Empty(t *testing.T) {
+	addr := os.Getenv("CLICKHOUSE_ADDR")
+	if addr == "" {
+		t.Skip("CLICKHOUSE_ADDR not set, skipping ClickHouse integration test")
+	}
+
+	conn, err := NewConnection(addr,
+		os.Getenv("CLICKHOUSE_DATABASE"),
+		os.Getenv("CLICKHOUSE_USERNAME"),
+		os.Getenv("CLICKHOUSE_PASSWORD"),
+	)
+	if err != nil {
+		t.Fatalf("NewConnection() = %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	writer := NewEventWriter(conn)
+	if err := writer.WriteBatch(context.Background(), nil); err != nil {
+		t.Fatalf("WriteBatch(nil) = %v, want nil", err)
+	}
+}
