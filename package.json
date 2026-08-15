@@ -17,6 +17,8 @@
 		"backup:postgres": "./scripts/backup-postgres.sh",
 		"restore:postgres": "./scripts/restore-postgres.sh",
 		"verify:postgres-backup": "./scripts/verify-postgres-backup.sh",
-		"loadtest": "./loadtest/run.sh"
+		"dr:exercise": "./scripts/dr-exercise.sh",
+		"loadtest": "./loadtest/run.sh",
+		"chaostest": "./chaostest/run-all.sh"
 	}
 }

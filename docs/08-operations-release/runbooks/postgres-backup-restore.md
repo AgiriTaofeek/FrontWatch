@@ -11,6 +11,7 @@
 | `scripts/backup-postgres.sh` | `pg_dump` (custom format, `-Fc`) of `$DATABASE_URL` to `backups/postgres/frontwatch_<UTC timestamp>.dump` |
 | `scripts/restore-postgres.sh <dump-file> [target-url]` | Restores a dump into a target database — defaults to a dedicated `frontwatch_restore_test` database, refuses any target whose name doesn't contain `_restore_test` unless `ALLOW_UNSAFE_RESTORE_TARGET=1` is set explicitly |
 | `scripts/verify-postgres-backup.sh [dump-file]` | The full validation sequence in one command: backup (if no dump file given) → restore into the isolated target → compare row counts per table between source and restored |
+| `scripts/dr-exercise.sh` | The real disaster recovery *exercise* (Step 9, PROGRESS.md) — see its own section below. Goes further than `verify-postgres-backup.sh`: destroys the real local Postgres container and volume, then executes this runbook's own "real recovery" procedure against the real local stack. |
 
 Also runnable via `bun run backup:postgres` / `restore:postgres` / `verify:postgres-backup` from the repo root.
 
@@ -47,6 +48,26 @@ This is a deliberate, rare, high-consequence action — not `restore-postgres.sh
 5. **Validate**: `curl /health/ready` on `control-api` (ADR-026) is `up`, spot-check a few known rows, confirm the dashboard loads real data.
 6. Document the incident — what was lost (the RPO window from step 2), why, and any follow-up (`release-strategy.md`'s "launch decision is recorded explicitly" discipline applies to real recoveries too: write down what happened, don't just move on once symptoms clear).
 
+## Procedure: running a disaster recovery exercise
+
+`infrastructure.md`: *"Run recovery exercises periodically, not only when something has already gone wrong."* `scripts/dr-exercise.sh` runs the whole thing for real, unattended, against the real local dev stack — not the isolated-database check `verify-postgres-backup.sh` already covers, which never puts the actual recovery procedure above under test:
+
+1. Seeds real baseline data (an org/project/alert rule) through the real HTTP routes.
+2. Takes a real backup — this is the RPO boundary.
+3. Creates *more* real data through the real routes, deliberately after the backup.
+4. **Declares recovery mode and destroys the real Postgres container and its Docker volume** — a genuine "storage failure"/"cluster loss" scenario (`infrastructure.md`'s own named DR scenario list), not a database-level drop. This step is real and only reversible via the backup — confirm you're pointed at a disposable local dev environment before running it, the same caution the "real recovery" procedure above already carries.
+5. Executes this runbook's own recovery sequence: restore infrastructure (recreate the container) → restore control data (`restore-postgres.sh`, `ALLOW_UNSAFE_RESTORE_TARGET=1`) → start services.
+6. Validates: every service's `/health/ready`, the pre-backup project and alert rule are queryable, the *post*-backup project is confirmed genuinely gone (proving the RPO gap is real, not just that *something* survived), a fresh event ingests and reaches ClickHouse (the full ingestion → worker → storage pipeline works again, not just Postgres).
+7. Reports measured RTO (wall-clock, disaster declared → fully validated) and the concrete RPO gap demonstrated, then cleans up its own seed data.
+
+```
+PG_BIN_DIR=/opt/homebrew/opt/postgresql@16/bin ./scripts/dr-exercise.sh
+```
+
+(`PG_BIN_DIR`: same reasoning as `backup-postgres.sh`'s own comment — point this at version-matched client tools if the Homebrew default is a newer major version than the docker-compose Postgres server.)
+
+**Result of the first real run** (2026-08-15, local dev machine): **8/8 validations passed, RTO = 46 seconds.** The RPO gap was demonstrated concretely — a project created after the backup was confirmed genuinely absent post-recovery, not merely assumed lost. ClickHouse was untouched throughout (out of scope, per this runbook's own "explicitly out of scope" section above) and the full ingestion → worker → ClickHouse pipeline was confirmed working again once Postgres recovered. No gaps found in the recovery sequence itself on this run; `infrastructure.md`'s call to "run recovery exercises periodically" is the standing follow-up, not a one-time checkbox.
+
 ## Not yet defined
 
-Formal RPO (max acceptable data loss) / RTO (max acceptable recovery time) targets — `infrastructure.md` calls for these "per customer deployment tier," which doesn't exist yet pre-pilot (`PROGRESS.md`: no real customer onboarded). Revisit once there's a real deployment tier to set a target against, not before.
+Formal RPO (max acceptable data loss) / RTO (max acceptable recovery time) *targets* — `infrastructure.md` calls for these "per customer deployment tier," which doesn't exist yet pre-pilot (`PROGRESS.md`: no real customer onboarded). The exercise above measures what RTO/RPO *currently is* on a local dev machine, which is a real, useful data point, but revisit setting an actual target once there's a real deployment tier to set one against.
