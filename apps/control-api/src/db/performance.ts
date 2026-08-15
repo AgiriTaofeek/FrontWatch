@@ -1,5 +1,5 @@
 import type { PerformanceMetricSummary } from "@frontwatch/contracts";
-import { clickhouse } from "./clickhouse";
+import { clickhouse, toClickHouseDateTime64 } from "./clickhouse";
 
 // Same ADR-023 shape as db/issues.ts and db/network.ts: no materialized
 // table, GROUP BY over the raw events the Go worker already wrote (Step
@@ -108,4 +108,71 @@ export async function listPerformanceMetrics(
 
 	const rows = await result.json<PerformanceMetricRow>();
 	return rows.map(toSummary);
+}
+
+export interface RecentMetricWindow {
+	p75Value: number;
+	sampleCount: number;
+	latestRelease: string | null;
+	latestRoute: string | null;
+}
+
+interface RecentMetricWindowRow {
+	sample_count: string;
+	p75_value: number;
+	latest_release: string;
+	latest_route: string;
+}
+
+// Step 8's performance_regression alert type (US-13.03): "performance
+// metrics can be used as conditions, threshold/window configuration is
+// supported, notifications include relevant route/release context
+// where available." A global (non-GROUP-BY) aggregate over one metric
+// within the window — unlike listPerformanceMetrics' dashboard view,
+// the evaluator already knows exactly which metric a given rule
+// targets, so there's nothing to group by. latestRelease/latestRoute
+// via argMax mirror db/issues.ts's own "context where available"
+// pattern — null when the window genuinely has no matching samples,
+// same reasoning listIssues/listNetworkResources already use.
+export async function getRecentMetricWindow(
+	projectId: string,
+	metricName: string,
+	since: Date,
+): Promise<RecentMetricWindow | null> {
+	const result = await clickhouse.query({
+		query: `
+			SELECT
+				count() AS sample_count,
+				quantile(0.75)(JSONExtractFloat(payload, 'value')) AS p75_value,
+				argMax(release, client_timestamp) AS latest_release,
+				argMax(route, client_timestamp) AS latest_route
+			FROM events
+			WHERE project_id = {projectId:String}
+				AND event_type = 'performance'
+				AND JSONExtractString(payload, 'metric_name') = {metricName:String}
+				AND client_timestamp >= {since:DateTime64(3)}
+		`,
+		format: "JSONEachRow",
+		query_params: {
+			projectId,
+			metricName,
+			since: toClickHouseDateTime64(since),
+		},
+	});
+
+	const rows = await result.json<RecentMetricWindowRow>();
+	const row = rows[0];
+	// A global aggregate always returns exactly one row even with zero
+	// matches (count() = 0) — unlike a GROUP BY query, an empty result
+	// set isn't how "no samples in this window" shows up here.
+	if (!row || Number(row.sample_count) === 0) {
+		return null;
+	}
+
+	return {
+		p75Value: row.p75_value,
+		sampleCount: Number(row.sample_count),
+		latestRelease: row.latest_release || null,
+		latestRoute: row.latest_route || null,
+	};
 }

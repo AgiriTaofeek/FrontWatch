@@ -9,10 +9,50 @@ import { alertRules } from "../db/schema";
 //
 // US-13.01: "an authorized user can create a rule, the rule has a
 // condition and notification destination, invalid rules cannot be
-// saved, rules can be enabled or disabled." Only `type: "new_issue"`
-// exists yet (Step 8's first Alerting slice) — error_spike/
-// performance_regression need real threshold/window config this
-// route doesn't have a shape for yet, deferred to their own chunks.
+// saved, rules can be enabled or disabled." All three E13-alerts.md
+// alert types are real now (US-13.01/13.02/13.03) — `type` is a
+// discriminated union in the request body, not a flat object with
+// optional fields, so "invalid rules cannot be saved" also covers
+// "an error_spike rule submitted without a threshold" the same way it
+// already covers a malformed webhook URL: rejected before it ever
+// reaches the database, not just before the evaluator ever runs.
+const newIssueBody = t.Object({
+	type: t.Literal("new_issue"),
+	webhookUrl: t.String({ format: "uri" }),
+});
+
+// US-13.02: "a configured threshold can trigger an alert" — N+ errors
+// within the last M minutes, evaluated project-wide (alertEvaluator.ts).
+const errorSpikeBody = t.Object({
+	type: t.Literal("error_spike"),
+	webhookUrl: t.String({ format: "uri" }),
+	windowMinutes: t.Integer({ minimum: 1 }),
+	thresholdCount: t.Integer({ minimum: 1 }),
+});
+
+// US-13.03: "performance metrics can be used as conditions, threshold/
+// window configuration is supported" — one of the five Core Web Vitals
+// instrumentation.md names, p75 over the window vs. thresholdValue.
+const performanceRegressionBody = t.Object({
+	type: t.Literal("performance_regression"),
+	webhookUrl: t.String({ format: "uri" }),
+	windowMinutes: t.Integer({ minimum: 1 }),
+	metricName: t.Union([
+		t.Literal("CLS"),
+		t.Literal("FCP"),
+		t.Literal("INP"),
+		t.Literal("LCP"),
+		t.Literal("TTFB"),
+	]),
+	thresholdValue: t.Number({ minimum: 0 }),
+});
+
+const createAlertRuleBody = t.Union([
+	newIssueBody,
+	errorSpikeBody,
+	performanceRegressionBody,
+]);
+
 export const alertRulesRoutes = new Elysia()
 	.post(
 		"/projects/:projectId/alert-rules",
@@ -21,7 +61,25 @@ export const alertRulesRoutes = new Elysia()
 				.insert(alertRules)
 				.values({
 					projectId: params.projectId,
+					type: body.type,
 					webhookUrl: body.webhookUrl,
+					// Only the columns matching body.type are ever populated —
+					// the discriminated union above guarantees TypeScript (and
+					// the request validator, before this code even runs) never
+					// lets e.g. a new_issue body carry a windowMinutes.
+					...(body.type === "error_spike"
+						? {
+								windowMinutes: body.windowMinutes,
+								thresholdCount: body.thresholdCount,
+							}
+						: {}),
+					...(body.type === "performance_regression"
+						? {
+								windowMinutes: body.windowMinutes,
+								metricName: body.metricName,
+								thresholdValue: body.thresholdValue,
+							}
+						: {}),
 				})
 				.returning();
 
@@ -29,14 +87,7 @@ export const alertRulesRoutes = new Elysia()
 		},
 		{
 			params: t.Object({ projectId: t.String({ format: "uuid" }) }),
-			body: t.Object({
-				// "invalid rules cannot be saved" — format: "uri" rejects a
-				// malformed webhook destination before it ever reaches the
-				// alert-worker, which would otherwise only discover a bad
-				// URL the moment it tries (and fails) to deliver a real
-				// notification.
-				webhookUrl: t.String({ format: "uri" }),
-			}),
+			body: createAlertRuleBody,
 		},
 	)
 	.get(

@@ -118,4 +118,219 @@ describe("runAlertEvaluationCycle", () => {
 			server.stop(true);
 		}
 	});
+
+	it("fires an error_spike alert once threshold is met, and doesn't re-fire within the same window bucket (US-13.02)", async () => {
+		const receivedPayloads: unknown[] = [];
+		const server = Bun.serve({
+			port: 0,
+			fetch: async (req) => {
+				receivedPayloads.push(await req.json());
+				return new Response(null, { status: 200 });
+			},
+		});
+
+		const eventIds: string[] = [];
+		let spikeProjectId: string | undefined;
+		let spikeRuleId: string | undefined;
+
+		try {
+			const [project] = await db
+				.insert(projects)
+				.values({ publicKey: `fw_pk_error_spike_evaluator_${Date.now()}` })
+				.returning();
+			if (!project) throw new Error("failed to seed test project");
+			spikeProjectId = project.id;
+
+			const [rule] = await db
+				.insert(alertRules)
+				.values({
+					projectId: project.id,
+					type: "error_spike",
+					webhookUrl: `http://localhost:${server.port}/`,
+					windowMinutes: 5,
+					thresholdCount: 2,
+				})
+				.returning();
+			if (!rule) throw new Error("failed to seed test rule");
+			spikeRuleId = rule.id;
+
+			const now = new Date();
+			for (let i = 0; i < 2; i++) {
+				const eventId = `evt_error_spike_${i}_${Date.now()}`;
+				eventIds.push(eventId);
+				await clickhouse.insert({
+					table: "events",
+					values: [
+						{
+							event_id: eventId,
+							project_id: project.id,
+							event_type: "error",
+							schema_version: 1,
+							client_timestamp: toClickHouseDateTime64(now),
+							server_received_at: toClickHouseDateTime64(now),
+							release: "",
+							session_id: "",
+							route: "",
+							fingerprint: `spike_fp_${i}`,
+							fingerprint_version: 1,
+							payload: JSON.stringify({
+								message: `Spike failure ${i}`,
+								exception_type: "SpikeError",
+								handled: false,
+							}),
+						},
+					],
+					format: "JSONEachRow",
+				});
+			}
+
+			// Same `now` passed explicitly both cycles — otherwise a real
+			// clock tick between calls could cross a window bucket boundary
+			// and make the dedup assertion below flaky.
+			const firstCycle = await runAlertEvaluationCycle(now);
+			expect(firstCycle.errorSpikesNotified).toBe(1);
+			expect(receivedPayloads).toHaveLength(1);
+
+			const payload = receivedPayloads[0] as {
+				type: string;
+				projectId: string;
+				errorCount: number;
+				thresholdCount: number;
+			};
+			expect(payload.type).toBe("error_spike");
+			expect(payload.projectId).toBe(project.id);
+			expect(payload.errorCount).toBeGreaterThanOrEqual(2);
+			expect(payload.thresholdCount).toBe(2);
+
+			const secondCycle = await runAlertEvaluationCycle(now);
+			expect(secondCycle.errorSpikesNotified).toBe(0);
+			expect(receivedPayloads).toHaveLength(1);
+		} finally {
+			server.stop(true);
+			if (eventIds.length > 0) {
+				await clickhouse.command({
+					query: `ALTER TABLE events DELETE WHERE event_id IN (${eventIds.map((id) => `'${id}'`).join(",")})`,
+				});
+			}
+			if (spikeRuleId) {
+				await db
+					.delete(alertEvents)
+					.where(eq(alertEvents.alertRuleId, spikeRuleId));
+				await db.delete(alertRules).where(eq(alertRules.id, spikeRuleId));
+			}
+			if (spikeProjectId) {
+				await db.delete(projects).where(eq(projects.id, spikeProjectId));
+			}
+		}
+	});
+
+	it("fires a performance_regression alert once the p75 threshold is exceeded, with route/release context (US-13.03)", async () => {
+		const receivedPayloads: unknown[] = [];
+		const server = Bun.serve({
+			port: 0,
+			fetch: async (req) => {
+				receivedPayloads.push(await req.json());
+				return new Response(null, { status: 200 });
+			},
+		});
+
+		const eventIds: string[] = [];
+		let regressionProjectId: string | undefined;
+		let regressionRuleId: string | undefined;
+
+		try {
+			const [project] = await db
+				.insert(projects)
+				.values({
+					publicKey: `fw_pk_performance_regression_evaluator_${Date.now()}`,
+				})
+				.returning();
+			if (!project) throw new Error("failed to seed test project");
+			regressionProjectId = project.id;
+
+			const [rule] = await db
+				.insert(alertRules)
+				.values({
+					projectId: project.id,
+					type: "performance_regression",
+					webhookUrl: `http://localhost:${server.port}/`,
+					windowMinutes: 5,
+					metricName: "LCP",
+					thresholdValue: 1000,
+				})
+				.returning();
+			if (!rule) throw new Error("failed to seed test rule");
+			regressionRuleId = rule.id;
+
+			const now = new Date();
+			const eventId = `evt_perf_regression_${Date.now()}`;
+			eventIds.push(eventId);
+			await clickhouse.insert({
+				table: "events",
+				values: [
+					{
+						event_id: eventId,
+						project_id: project.id,
+						event_type: "performance",
+						schema_version: 1,
+						client_timestamp: toClickHouseDateTime64(now),
+						server_received_at: toClickHouseDateTime64(now),
+						release: "3.1.0",
+						session_id: "",
+						route: "/dashboard",
+						fingerprint: "",
+						fingerprint_version: 0,
+						payload: JSON.stringify({
+							metric_name: "LCP",
+							value: 4200,
+							rating: "poor",
+							navigation_type: "navigate",
+						}),
+					},
+				],
+				format: "JSONEachRow",
+			});
+
+			const firstCycle = await runAlertEvaluationCycle(now);
+			expect(firstCycle.performanceRegressionsNotified).toBe(1);
+			expect(receivedPayloads).toHaveLength(1);
+
+			const payload = receivedPayloads[0] as {
+				type: string;
+				projectId: string;
+				metricName: string;
+				p75Value: number;
+				thresholdValue: number;
+				latestRelease: string | null;
+				latestRoute: string | null;
+			};
+			expect(payload.type).toBe("performance_regression");
+			expect(payload.projectId).toBe(project.id);
+			expect(payload.metricName).toBe("LCP");
+			expect(payload.p75Value).toBeGreaterThanOrEqual(1000);
+			expect(payload.thresholdValue).toBe(1000);
+			expect(payload.latestRelease).toBe("3.1.0");
+			expect(payload.latestRoute).toBe("/dashboard");
+
+			const secondCycle = await runAlertEvaluationCycle(now);
+			expect(secondCycle.performanceRegressionsNotified).toBe(0);
+			expect(receivedPayloads).toHaveLength(1);
+		} finally {
+			server.stop(true);
+			if (eventIds.length > 0) {
+				await clickhouse.command({
+					query: `ALTER TABLE events DELETE WHERE event_id IN (${eventIds.map((id) => `'${id}'`).join(",")})`,
+				});
+			}
+			if (regressionRuleId) {
+				await db
+					.delete(alertEvents)
+					.where(eq(alertEvents.alertRuleId, regressionRuleId));
+				await db.delete(alertRules).where(eq(alertRules.id, regressionRuleId));
+			}
+			if (regressionProjectId) {
+				await db.delete(projects).where(eq(projects.id, regressionProjectId));
+			}
+		}
+	});
 });

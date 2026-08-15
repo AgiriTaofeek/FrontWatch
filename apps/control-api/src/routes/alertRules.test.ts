@@ -33,14 +33,17 @@ afterAll(async () => {
 });
 
 describe("POST /projects/:projectId/alert-rules", () => {
-	it("creates a rule with a generated id, type new_issue, enabled by default", async () => {
+	it("creates a new_issue rule with a generated id, enabled by default", async () => {
 		projectId = await seedProject();
 
 		const response = await alertRulesRoutes.handle(
 			new Request(`http://localhost/projects/${projectId}/alert-rules`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ webhookUrl: "https://example.com/hooks/1" }),
+				body: JSON.stringify({
+					type: "new_issue",
+					webhookUrl: "https://example.com/hooks/1",
+				}),
 			}),
 		);
 		const body = await response.json();
@@ -51,6 +54,8 @@ describe("POST /projects/:projectId/alert-rules", () => {
 		expect(body.type).toBe("new_issue");
 		expect(body.webhookUrl).toBe("https://example.com/hooks/1");
 		expect(body.enabled).toBe(true);
+		expect(body.windowMinutes).toBeNull();
+		expect(body.thresholdCount).toBeNull();
 	});
 
 	it("rejects a malformed webhookUrl — invalid rules cannot be saved (US-13.01)", async () => {
@@ -58,7 +63,90 @@ describe("POST /projects/:projectId/alert-rules", () => {
 			new Request(`http://localhost/projects/${projectId}/alert-rules`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ webhookUrl: "not-a-url" }),
+				body: JSON.stringify({ type: "new_issue", webhookUrl: "not-a-url" }),
+			}),
+		);
+
+		expect(response.status).toBe(422);
+	});
+
+	it("creates an error_spike rule with its threshold/window condition (US-13.02)", async () => {
+		const response = await alertRulesRoutes.handle(
+			new Request(`http://localhost/projects/${projectId}/alert-rules`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					type: "error_spike",
+					webhookUrl: "https://example.com/hooks/2",
+					windowMinutes: 10,
+					thresholdCount: 25,
+				}),
+			}),
+		);
+		const body = await response.json();
+		createdRuleIds.push(body.id);
+
+		expect(response.status).toBe(200);
+		expect(body.type).toBe("error_spike");
+		expect(body.windowMinutes).toBe(10);
+		expect(body.thresholdCount).toBe(25);
+		expect(body.metricName).toBeNull();
+		expect(body.thresholdValue).toBeNull();
+	});
+
+	it("rejects an error_spike rule missing its threshold — invalid rules cannot be saved", async () => {
+		const response = await alertRulesRoutes.handle(
+			new Request(`http://localhost/projects/${projectId}/alert-rules`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					type: "error_spike",
+					webhookUrl: "https://example.com/hooks/2",
+					windowMinutes: 10,
+				}),
+			}),
+		);
+
+		expect(response.status).toBe(422);
+	});
+
+	it("creates a performance_regression rule with its metric/threshold/window condition (US-13.03)", async () => {
+		const response = await alertRulesRoutes.handle(
+			new Request(`http://localhost/projects/${projectId}/alert-rules`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					type: "performance_regression",
+					webhookUrl: "https://example.com/hooks/3",
+					windowMinutes: 15,
+					metricName: "LCP",
+					thresholdValue: 2500,
+				}),
+			}),
+		);
+		const body = await response.json();
+		createdRuleIds.push(body.id);
+
+		expect(response.status).toBe(200);
+		expect(body.type).toBe("performance_regression");
+		expect(body.windowMinutes).toBe(15);
+		expect(body.metricName).toBe("LCP");
+		expect(body.thresholdValue).toBe(2500);
+		expect(body.thresholdCount).toBeNull();
+	});
+
+	it("rejects a performance_regression rule with an unknown metric name", async () => {
+		const response = await alertRulesRoutes.handle(
+			new Request(`http://localhost/projects/${projectId}/alert-rules`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					type: "performance_regression",
+					webhookUrl: "https://example.com/hooks/3",
+					windowMinutes: 15,
+					metricName: "NOT_A_METRIC",
+					thresholdValue: 2500,
+				}),
 			}),
 		);
 
@@ -67,15 +155,23 @@ describe("POST /projects/:projectId/alert-rules", () => {
 });
 
 describe("GET /projects/:projectId/alert-rules", () => {
-	it("lists rules for a project", async () => {
+	it("lists rules for a project, newest first", async () => {
 		const response = await alertRulesRoutes.handle(
 			new Request(`http://localhost/projects/${projectId}/alert-rules`),
 		);
 		const body = await response.json();
 
+		// Three rules created above (new_issue, error_spike,
+		// performance_regression) — the malformed/rejected POSTs never
+		// made it into createdRuleIds/the database.
 		expect(response.status).toBe(200);
-		expect(body.alertRules).toHaveLength(1);
-		expect(body.alertRules[0].webhookUrl).toBe("https://example.com/hooks/1");
+		expect(body.alertRules).toHaveLength(3);
+		const types = body.alertRules.map((r: { type: string }) => r.type).sort();
+		expect(types).toEqual([
+			"error_spike",
+			"new_issue",
+			"performance_regression",
+		]);
 	});
 
 	it("returns an empty list for a project with no rules", async () => {

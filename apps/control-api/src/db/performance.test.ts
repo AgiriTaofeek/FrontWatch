@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { clickhouse } from "./clickhouse";
-import { listPerformanceMetrics } from "./performance";
+import { getRecentMetricWindow, listPerformanceMetrics } from "./performance";
 
 // Integration test — hits the real local ClickHouse. Inserts test rows
 // directly (the write path is already proven end-to-end in Step 7 —
@@ -166,5 +166,104 @@ describe("listPerformanceMetrics (ADR-023-style aggregation)", () => {
 	it("returns an empty list for a project with no performance events", async () => {
 		const metrics = await listPerformanceMetrics(randomUUID());
 		expect(metrics).toHaveLength(0);
+	});
+});
+
+describe("getRecentMetricWindow (Step 8's performance_regression alert type)", () => {
+	it("returns p75 + release/route context for samples within the window, ignoring older ones", async () => {
+		const windowProjectId = randomUUID();
+		const now = new Date();
+		const recent = (msAgo: number) =>
+			new Date(now.getTime() - msAgo)
+				.toISOString()
+				.replace("T", " ")
+				.replace("Z", "");
+
+		await clickhouse.insert({
+			table: "events",
+			values: [
+				{
+					event_id: `evt_window_a_${Date.now()}`,
+					project_id: windowProjectId,
+					event_type: "performance",
+					schema_version: 1,
+					client_timestamp: recent(60_000),
+					server_received_at: recent(60_000),
+					release: "1.0.0",
+					session_id: "",
+					route: "/checkout",
+					fingerprint: "",
+					fingerprint_version: 0,
+					payload: JSON.stringify({
+						metric_name: "LCP",
+						value: 2000,
+						rating: "needs-improvement",
+						navigation_type: "navigate",
+					}),
+				},
+				{
+					event_id: `evt_window_b_${Date.now()}`,
+					project_id: windowProjectId,
+					event_type: "performance",
+					schema_version: 1,
+					client_timestamp: recent(30_000),
+					server_received_at: recent(30_000),
+					release: "1.0.1",
+					session_id: "",
+					route: "/checkout",
+					fingerprint: "",
+					fingerprint_version: 0,
+					payload: JSON.stringify({
+						metric_name: "LCP",
+						value: 4000,
+						rating: "poor",
+						navigation_type: "navigate",
+					}),
+				},
+				// Outside the window — must not affect the p75.
+				{
+					event_id: `evt_window_old_${Date.now()}`,
+					project_id: windowProjectId,
+					event_type: "performance",
+					schema_version: 1,
+					client_timestamp: recent(3_600_000),
+					server_received_at: recent(3_600_000),
+					release: "0.9.0",
+					session_id: "",
+					route: "/checkout",
+					fingerprint: "",
+					fingerprint_version: 0,
+					payload: JSON.stringify({
+						metric_name: "LCP",
+						value: 100,
+						rating: "good",
+						navigation_type: "navigate",
+					}),
+				},
+			],
+			format: "JSONEachRow",
+		});
+		// Cleaned up directly below (project-scoped DELETE), not via the
+		// shared insertedEventIds/afterAll mechanism — this test uses its
+		// own dedicated project id, so a direct DELETE is simpler than
+		// threading generated event ids back out of the values array above.
+
+		const since = new Date(now.getTime() - 5 * 60_000); // last 5m
+		const window = await getRecentMetricWindow(windowProjectId, "LCP", since);
+
+		expect(window).not.toBeNull();
+		expect(window?.sampleCount).toBe(2);
+		// argMax(..., client_timestamp): the more recent sample's context.
+		expect(window?.latestRelease).toBe("1.0.1");
+		expect(window?.latestRoute).toBe("/checkout");
+
+		await clickhouse.command({
+			query: `ALTER TABLE events DELETE WHERE project_id = '${windowProjectId}'`,
+		});
+	});
+
+	it("returns null when the window has no matching samples", async () => {
+		const window = await getRecentMetricWindow(randomUUID(), "LCP", new Date());
+		expect(window).toBeNull();
 	});
 });
