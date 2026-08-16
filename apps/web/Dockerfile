@@ -55,8 +55,13 @@ ENV NODE_ENV=production
 COPY --from=build /app/node_modules node_modules
 COPY --from=build /app/apps/web/node_modules apps/web/node_modules
 COPY --from=build /app/apps/web/dist /app/apps/web/dist
+COPY apps/web/serve.ts apps/web/serve.ts
 WORKDIR /app/apps/web
 USER bun
 ENV PORT=3001
 EXPOSE 3001
-CMD ["bun", "dist/server/server.js"]
+# Not dist/server/server.js directly — see serve.ts's own header
+# comment: that bare handler never serves dist/client/assets/*,
+# discovered by actually running this stack and finding the dashboard
+# stuck on its SSR loading fallback forever.
+CMD ["bun", "serve.ts"]
