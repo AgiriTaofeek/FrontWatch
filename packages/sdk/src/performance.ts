@@ -31,7 +31,15 @@ function report(metric: {
 	});
 }
 
+// SSR-safety guard — see errors.ts's identical comment for why. web-vitals
+// itself is a browser-only library (PerformanceObserver etc.) — not
+// assumed to already guard this internally, confirmed the same way the
+// other four modules were: a real non-browser call before this guard
+// existed.
 export function registerPerformanceInstrumentation(): void {
+	if (typeof window === "undefined") {
+		return;
+	}
 	onCLS(report);
 	onFCP(report);
 	onINP(report);

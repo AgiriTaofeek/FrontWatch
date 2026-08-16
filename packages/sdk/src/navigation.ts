@@ -30,7 +30,11 @@ function recordNavigationIfChanged(): void {
 	previousPath = currentPath;
 }
 
+// SSR-safety guard — see errors.ts's identical comment for why.
 export function registerNavigationInstrumentation(): void {
+	if (typeof window === "undefined") {
+		return;
+	}
 	previousPath = window.location.pathname;
 
 	const originalPushState = window.history.pushState.bind(window.history);
