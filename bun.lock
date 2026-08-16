@@ -27,6 +27,15 @@
         "postgres": "^3.4.9",
       },
     },
+    "apps/demo": {
+      "name": "@frontwatch/demo",
+      "dependencies": {
+        "@frontwatch/sdk": "workspace:*",
+      },
+      "devDependencies": {
+        "vite": "^8.2.1",
+      },
+    },
     "apps/web": {
       "name": "@frontwatch/web",
       "dependencies": {
@@ -227,6 +236,8 @@
     "@frontwatch/contracts": ["@frontwatch/contracts@workspace:packages/contracts"],
 
     "@frontwatch/control-api": ["@frontwatch/control-api@workspace:apps/control-api"],
+
+    "@frontwatch/demo": ["@frontwatch/demo@workspace:apps/demo"],
 
     "@frontwatch/sdk": ["@frontwatch/sdk@workspace:packages/sdk"],
 
