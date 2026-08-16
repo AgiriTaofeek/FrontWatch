@@ -3,10 +3,12 @@ import { EventBuffer } from "./buffer";
 import { buildContext, type SdkConfig } from "./context";
 import {
 	createErrorEvent,
+	createNavigationEvent,
 	createNetworkEvent,
 	createPerformanceEvent,
 	type ErrorPayload,
 	type FrontwatchEvent,
+	type NavigationPayload,
 	type NetworkPayload,
 	type PerformancePayload,
 } from "./event";
@@ -95,6 +97,20 @@ export class Client {
 		this.recordEvent(createPerformanceEvent(payload, context));
 	}
 
+	// Same automatic-only reasoning as captureNetworkEvent — used only by
+	// navigation.ts, alongside (not instead of) that module's existing
+	// "navigation" breadcrumb recording. Two different consumers of the
+	// same underlying route-change signal: this is the standalone,
+	// independently-queryable event; the breadcrumb is context attached
+	// to a future error.
+	captureNavigationEvent(payload: NavigationPayload): void {
+		if (!this.enabled) {
+			return;
+		}
+		const context = buildContext(this.config);
+		this.recordEvent(createNavigationEvent(payload, context));
+	}
+
 	// Shared by both capture methods above — now that there's a second
 	// real caller, the shared privacy->buffer->flush sequence earns
 	// being factored out (event *construction* stays separate per
@@ -176,4 +192,10 @@ export function captureNetworkEvent(payload: NetworkPayload): void {
 // noise about normal timing, not a real misconfiguration.
 export function capturePerformanceEvent(payload: PerformancePayload): void {
 	client?.capturePerformanceEvent(payload);
+}
+
+// Same reasoning as captureNetworkEvent/capturePerformanceEvent — fired
+// automatically by navigation.ts's History API patch, no manual API.
+export function captureNavigationEvent(payload: NavigationPayload): void {
+	client?.captureNavigationEvent(payload);
 }

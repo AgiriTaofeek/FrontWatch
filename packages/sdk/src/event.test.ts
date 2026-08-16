@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { Context } from "./context";
 import {
 	createErrorEvent,
+	createNavigationEvent,
 	createNetworkEvent,
 	createPerformanceEvent,
 } from "./event";
@@ -101,6 +102,33 @@ describe("createPerformanceEvent", () => {
 			expect(event.payload.metricName).toBe("LCP");
 			expect(event.payload.value).toBe(1800);
 			expect(event.payload.rating).toBe("good");
+		}
+	});
+});
+
+describe("createNavigationEvent", () => {
+	it("builds a navigation event with the discriminant set correctly", () => {
+		const event = createNavigationEvent(
+			{ fromRoute: "/accounts", toRoute: "/settings", navigationType: "push" },
+			context,
+		);
+
+		expect(event.eventType).toBe("navigation");
+		if (event.eventType === "navigation") {
+			expect(event.payload.fromRoute).toBe("/accounts");
+			expect(event.payload.toRoute).toBe("/settings");
+			expect(event.payload.navigationType).toBe("push");
+		}
+	});
+
+	it("allows a null fromRoute for the very first navigation", () => {
+		const event = createNavigationEvent(
+			{ fromRoute: null, toRoute: "/start", navigationType: "push" },
+			context,
+		);
+
+		if (event.eventType === "navigation") {
+			expect(event.payload.fromRoute).toBeNull();
 		}
 	});
 });

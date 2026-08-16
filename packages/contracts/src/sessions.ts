@@ -20,12 +20,22 @@ export interface SessionSummary {
 
 export interface SessionEvent {
 	eventId: string;
-	eventType: "error" | "network";
+	// Widened from "error" | "network" alongside the navigation work —
+	// a real, previously-untracked gap found in the same pass: this
+	// union never included "performance" either, even though
+	// performance events have carried a session_id since Step 7. A
+	// performance event landing in a session's timeline silently fell
+	// through db/sessions.ts's summarize() to the network-shaped
+	// fallback branch, printing "undefined undefined -> undefined" —
+	// found and fixed here, not left as a second half-measure.
+	eventType: "error" | "network" | "performance" | "navigation";
 	occurredAt: string;
 	route: string | null;
-	// Human-readable one-liner: the error message, or "GET /api/x -> 200"
-	// for a network event — built server-side from the raw payload so
-	// apps/web doesn't need its own copy of "how to summarize an event."
+	// Human-readable one-liner: the error message, "GET /api/x -> 200"
+	// for a network event, "LCP: 1800" for a performance sample, or
+	// "Navigation -> /accounts" for a navigation event — built
+	// server-side from the raw payload so apps/web doesn't need its own
+	// copy of "how to summarize an event."
 	summary: string;
 }
 

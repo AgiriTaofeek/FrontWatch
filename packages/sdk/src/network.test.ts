@@ -17,6 +17,7 @@ mock.module("./client", () => ({
 	captureException: mock(() => {}),
 	captureNetworkEvent: captureNetworkEventMock,
 	capturePerformanceEvent: mock(() => {}),
+	captureNavigationEvent: mock(() => {}),
 }));
 
 const { normalizeResource, registerNetworkInstrumentation } = await import(

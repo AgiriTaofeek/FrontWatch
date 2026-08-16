@@ -14,8 +14,9 @@ const insertedEventIds: string[] = [];
 
 async function insertEvent(overrides: {
 	eventId: string;
-	eventType: "error" | "network";
+	eventType: "error" | "network" | "performance" | "navigation";
 	route?: string;
+	sessionId?: string;
 	clientTimestamp: string;
 	payload: Record<string, unknown>;
 }) {
@@ -31,7 +32,7 @@ async function insertEvent(overrides: {
 				client_timestamp: overrides.clientTimestamp,
 				server_received_at: overrides.clientTimestamp,
 				release: "",
-				session_id: rawSessionId,
+				session_id: overrides.sessionId ?? rawSessionId,
 				route: overrides.route ?? "",
 				fingerprint: overrides.eventType === "error" ? "some_fp" : "",
 				fingerprint_version: overrides.eventType === "error" ? 1 : 0,
@@ -143,6 +144,60 @@ describe("listSessions / getSession (ADR-023-style aggregation)", () => {
 	it("returns an empty list for a project with no sessions", async () => {
 		const sessions = await listSessions(randomUUID());
 		expect(sessions).toHaveLength(0);
+	});
+});
+
+describe("getSession — performance and navigation events in the timeline", () => {
+	// A real, previously-untracked bug found and fixed alongside the
+	// navigation work: summarize() never handled "performance" at all
+	// (silently fell through to the network-shaped branch, producing
+	// "? ? -> ?"), and obviously never handled "navigation" either since
+	// it didn't exist yet. Its own isolated session id, so these
+	// assertions don't get tangled up with the 2-event session above.
+	const perfNavSessionId = `sess_perfnav_${Date.now()}`;
+
+	it("summarizes a performance event as 'metricName: value'", async () => {
+		await insertEvent({
+			eventId: `evt_perf_${Date.now()}`,
+			eventType: "performance",
+			sessionId: perfNavSessionId,
+			clientTimestamp: "2026-08-16 09:00:00.000",
+			payload: {
+				metric_name: "LCP",
+				value: 1800,
+				rating: "good",
+				navigation_type: "navigate",
+			},
+		});
+
+		const session = await getSession(projectId, perfNavSessionId);
+
+		expect(session?.timeline).toHaveLength(1);
+		expect(session?.timeline[0]?.eventType).toBe("performance");
+		expect(session?.timeline[0]?.summary).toBe("LCP: 1800");
+		// The old bug's exact failure mode — must never resurface.
+		expect(session?.timeline[0]?.summary).not.toContain("? ? -> ?");
+	});
+
+	it("summarizes a navigation event as 'Navigation -> toRoute'", async () => {
+		await insertEvent({
+			eventId: `evt_nav_${Date.now()}`,
+			eventType: "navigation",
+			sessionId: perfNavSessionId,
+			clientTimestamp: "2026-08-16 09:01:00.000",
+			payload: {
+				from_route: "/accounts",
+				to_route: "/settings",
+				navigation_type: "push",
+			},
+		});
+
+		const session = await getSession(projectId, perfNavSessionId);
+
+		const navEvent = session?.timeline.find(
+			(e) => e.eventType === "navigation",
+		);
+		expect(navEvent?.summary).toBe("Navigation -> /settings");
 	});
 });
 

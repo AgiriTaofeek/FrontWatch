@@ -3,6 +3,7 @@ import type {
 	Breadcrumb,
 	ErrorPayload,
 	FrontwatchEvent,
+	NavigationPayload,
 	NetworkPayload,
 } from "./event";
 
@@ -171,6 +172,22 @@ function redactNetworkPayload(
 	};
 }
 
+function redactNavigationPayload(
+	payload: NavigationPayload,
+	rules: readonly PrivacyRule[],
+): NavigationPayload {
+	// Same reasoning as context.route (redactContext below) — a route
+	// segment can carry sensitive data regardless of which field it
+	// arrives in.
+	return {
+		...payload,
+		fromRoute: payload.fromRoute
+			? redactString(payload.fromRoute, rules)
+			: payload.fromRoute,
+		toRoute: redactString(payload.toRoute, rules),
+	};
+}
+
 function redactContext(
 	context: Context,
 	rules: readonly PrivacyRule[],
@@ -212,5 +229,11 @@ export function applyPrivacy(
 			// routed through this function so context.route redaction applies
 			// uniformly to every event type, not skipped for this one.
 			return { ...event, context };
+		case "navigation":
+			return {
+				...event,
+				context,
+				payload: redactNavigationPayload(event.payload, rules),
+			};
 	}
 }

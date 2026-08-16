@@ -118,19 +118,34 @@ export async function listSessions(
 
 interface TimelineRow {
 	event_id: string;
-	event_type: "error" | "network";
+	event_type: "error" | "network" | "performance" | "navigation";
 	occurred_at: string;
 	route: string;
 	payload: string;
 }
 
+// Widened from error|network to all four real event types alongside
+// the navigation work — a real, previously-untracked gap found in the
+// same pass: "performance" was never handled here at all, even though
+// performance events have carried a session_id since Step 7. Confirmed
+// the actual pre-existing bug this caused, not just inferred it: a
+// performance event fell through to the network-shaped branch below
+// (`${payload.method ?? "?"} ...`), which has no `method`/`resource`/
+// `status` fields on a performance payload, silently printing
+// "? ? -> ?" into every session timeline that included one.
 function summarize(row: TimelineRow): string {
 	try {
 		const payload = JSON.parse(row.payload) as Record<string, unknown>;
-		if (row.event_type === "error") {
-			return String(payload.message ?? "(no message)");
+		switch (row.event_type) {
+			case "error":
+				return String(payload.message ?? "(no message)");
+			case "performance":
+				return `${payload.metric_name ?? "?"}: ${payload.value ?? "?"}`;
+			case "navigation":
+				return `Navigation -> ${payload.to_route ?? "?"}`;
+			default:
+				return `${payload.method ?? "?"} ${payload.resource ?? "?"} -> ${payload.status ?? "?"}`;
 		}
-		return `${payload.method ?? "?"} ${payload.resource ?? "?"} -> ${payload.status ?? "?"}`;
 	} catch {
 		// Malformed/unparseable payload shouldn't break the whole
 		// timeline — a visibly-degraded summary beats a 500.

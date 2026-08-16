@@ -13,19 +13,21 @@ import (
 	"time"
 )
 
-// EventType is a real three-member set — packages/sdk's performance
-// instrumentation (Step 7) made "performance" real, matching this
-// package's own earlier note that said to extend this when that
-// happened. breadcrumb deliberately does *not* become a fourth member
-// here — per the design confirmed with the user, breadcrumbs are a
-// trail attached to ErrorPayload (see the Breadcrumb type below), not
-// their own standalone event type.
+// EventType is a real four-member set — packages/sdk's navigation
+// instrumentation (the framework-adapter gap's own prerequisite) made
+// "navigation" real, matching this package's own earlier note that
+// said to extend this when a new event_type is real. breadcrumb
+// deliberately does *not* become a fifth member here — per the design
+// confirmed with the user, breadcrumbs are a trail attached to
+// ErrorPayload (see the Breadcrumb type below), not their own
+// standalone event type.
 type EventType string
 
 const (
 	EventTypeError       EventType = "error"
 	EventTypeNetwork     EventType = "network"
 	EventTypePerformance EventType = "performance"
+	EventTypeNavigation  EventType = "navigation"
 )
 
 var (
@@ -36,6 +38,7 @@ var (
 	ErrMissingMethod     = errors.New("payload.method is required")
 	ErrMissingResource   = errors.New("payload.resource is required")
 	ErrMissingMetricName = errors.New("payload.metric_name is required")
+	ErrMissingToRoute    = errors.New("payload.to_route is required")
 	ErrMissingPayload    = errors.New("payload is required")
 	ErrUnsupportedSchema = errors.New("unsupported schema_version")
 )
@@ -87,6 +90,21 @@ type PerformancePayload struct {
 	NavigationType string  `json:"navigation_type,omitempty"`
 }
 
+// NavigationPayload mirrors packages/contracts' WireNavigationPayload —
+// a standalone, independently-queryable event, distinct from a
+// "navigation"-category Breadcrumb (context attached to a future
+// error's payload, not investigable on its own). FromRoute is a
+// pointer, not a plain string with omitempty: an empty string and "no
+// prior route at all" (the very first navigation an SDK instance
+// observes) are genuinely different states, and Validate() below must
+// be able to tell them apart the same way PerformancePayload.Value's
+// own comment already explains for "zero isn't absent."
+type NavigationPayload struct {
+	FromRoute      *string `json:"from_route,omitempty"`
+	ToRoute        string  `json:"to_route"`
+	NavigationType string  `json:"navigation_type"`
+}
+
 // Event is a single decoded telemetry event. Payload is now a real
 // discriminated shape — exactly one of ErrorPayload/NetworkPayload/
 // PerformancePayload is set, chosen by EventType — mirroring
@@ -108,6 +126,7 @@ type Event struct {
 	ErrorPayload       *ErrorPayload       `json:"-"`
 	NetworkPayload     *NetworkPayload     `json:"-"`
 	PerformancePayload *PerformancePayload `json:"-"`
+	NavigationPayload  *NavigationPayload  `json:"-"`
 }
 
 // eventWire is Event's wire shape — same fields, but a single untyped
@@ -157,6 +176,7 @@ func (e *Event) UnmarshalJSON(data []byte) error {
 	e.ErrorPayload = nil
 	e.NetworkPayload = nil
 	e.PerformancePayload = nil
+	e.NavigationPayload = nil
 
 	// Unknown event_types decode with no payload attached — Validate()
 	// is what actually rejects them; decoding itself stays permissive so
@@ -179,6 +199,14 @@ func (e *Event) UnmarshalJSON(data []byte) error {
 			}
 		}
 		e.PerformancePayload = &payload
+	case EventTypeNavigation:
+		var payload NavigationPayload
+		if len(wire.Payload) > 0 {
+			if err := json.Unmarshal(wire.Payload, &payload); err != nil {
+				return fmt.Errorf("decoding navigation payload: %w", err)
+			}
+		}
+		e.NavigationPayload = &payload
 	case EventTypeError:
 		var payload ErrorPayload
 		if len(wire.Payload) > 0 {
@@ -201,6 +229,8 @@ func (e Event) PayloadJSON() ([]byte, error) {
 		return json.Marshal(e.NetworkPayload)
 	case EventTypePerformance:
 		return json.Marshal(e.PerformancePayload)
+	case EventTypeNavigation:
+		return json.Marshal(e.NavigationPayload)
 	default:
 		return json.Marshal(e.ErrorPayload)
 	}
@@ -243,6 +273,13 @@ func (e Event) Validate() error {
 		}
 		if e.PerformancePayload.MetricName == "" {
 			return ErrMissingMetricName
+		}
+	case EventTypeNavigation:
+		if e.NavigationPayload == nil {
+			return ErrMissingPayload
+		}
+		if e.NavigationPayload.ToRoute == "" {
+			return ErrMissingToRoute
 		}
 	default:
 		return fmt.Errorf("%w: %q", ErrUnsupportedType, e.EventType)

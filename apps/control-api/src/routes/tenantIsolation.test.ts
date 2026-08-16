@@ -10,6 +10,7 @@ import {
 import { alertRulesRoutes } from "./alertRules";
 import { applicationHealthRoutes } from "./applicationHealth";
 import { issuesRoutes } from "./issues";
+import { navigationRoutes } from "./navigation";
 import { networkRoutes } from "./network";
 import { performanceRoutes } from "./performance";
 import { projectsRoutes } from "./projects";
@@ -66,6 +67,15 @@ describe("cross-organization access — org_A principal against org_B's resource
 	it("GET /projects/:projectId/issues → 404", async () => {
 		const response = await issuesRoutes.handle(
 			new Request(`http://localhost/projects/${projectInOrgB.id}/issues`, {
+				headers: { Cookie: orgA.cookie },
+			}),
+		);
+		expect(response.status).toBe(404);
+	});
+
+	it("GET /projects/:projectId/navigation → 404", async () => {
+		const response = await navigationRoutes.handle(
+			new Request(`http://localhost/projects/${projectInOrgB.id}/navigation`, {
 				headers: { Cookie: orgA.cookie },
 			}),
 		);

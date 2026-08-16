@@ -4,15 +4,15 @@
 // names are snake_case because that's the literal wire format, not a
 // TypeScript convention choice.
 //
-// Three event types now (error, network, performance) — a real
-// discriminated union instead of a single flat payload type, per Step
-// 4's own comment that this should happen "when a second event_type is
-// real." breadcrumb is *not* a fourth event_type here, deliberately —
-// per the design confirmed with the user (PROGRESS.md's Post-MVP gap
-// closure section), breadcrumbs are a trail attached to an error's own
-// payload, not sent as their own standalone event.
+// Four event types now (error, network, performance, navigation) — a
+// real discriminated union instead of a single flat payload type, per
+// Step 4's own comment that this should happen "when a second
+// event_type is real." breadcrumb is *not* a fifth event_type here,
+// deliberately — per the design confirmed with the user (PROGRESS.md's
+// Post-MVP gap closure section), breadcrumbs are a trail attached to an
+// error's own payload, not sent as their own standalone event.
 
-export type WireEventType = "error" | "network" | "performance";
+export type WireEventType = "error" | "network" | "performance" | "navigation";
 
 // instrumentation.md §Breadcrumbs' category vocabulary — mirrors
 // packages/sdk's BreadcrumbCategory exactly.
@@ -66,6 +66,19 @@ export interface WirePerformancePayload {
 	navigation_type: string;
 }
 
+// instrumentation.md §Navigation: "Event shape: {event_type:
+// "navigation", from_route, to_route, navigation_type}" — a standalone,
+// independently-queryable event, distinct from a "navigation"-category
+// breadcrumb (which is context attached to a future error's payload,
+// not investigable on its own). from_route is absent (not sent as an
+// empty string) for the very first navigation an SDK instance observes
+// — there is no prior route to report.
+export interface WireNavigationPayload {
+	from_route?: string;
+	to_route: string;
+	navigation_type: "push" | "replace" | "pop";
+}
+
 export interface WireClient {
 	browser?: string;
 	browser_version?: string;
@@ -91,6 +104,10 @@ export type WireEvent =
 	| (WireEventBase & {
 			event_type: "performance";
 			payload: WirePerformancePayload;
+	  })
+	| (WireEventBase & {
+			event_type: "navigation";
+			payload: WireNavigationPayload;
 	  });
 
 export interface IngestRequest {

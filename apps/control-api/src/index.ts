@@ -11,6 +11,7 @@ import { alertRulesRoutes } from "./routes/alertRules";
 import { applicationHealthRoutes } from "./routes/applicationHealth";
 import { authRoutes } from "./routes/auth";
 import { issuesRoutes } from "./routes/issues";
+import { navigationRoutes } from "./routes/navigation";
 import { networkRoutes } from "./routes/network";
 import { performanceRoutes } from "./routes/performance";
 import { projectsRoutes } from "./routes/projects";
@@ -28,6 +29,7 @@ const api = new Elysia({ prefix: "/api/v1" })
 	.use(authRoutes)
 	.use(projectsRoutes)
 	.use(issuesRoutes)
+	.use(navigationRoutes)
 	.use(networkRoutes)
 	.use(sessionsRoutes)
 	.use(performanceRoutes)
