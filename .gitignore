@@ -1,5 +1,14 @@
 node_modules/
 .env*
+# ...except a template committed on purpose (infra/self-hosted/.env.example,
+# docs/08-operations-release/self-hosted-installation.md's own first step)
+# — real values still never belong in source control, but the template
+# documenting which ones exist should, the same way any other
+# .env.example convention works. Found the gap while adding the first
+# one this repo has ever had: the blanket ".env*" pattern above was
+# silently swallowing it too.
+!.env.example
+!**/.env.example
 
 # Go build artifacts
 bin/
