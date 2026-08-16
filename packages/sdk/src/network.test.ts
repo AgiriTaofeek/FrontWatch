@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { __resetBreadcrumbsForTests, getBreadcrumbTrail } from "./breadcrumbs";
 import type { NetworkPayload } from "./event";
 
@@ -26,9 +26,14 @@ const { normalizeResource, registerNetworkInstrumentation } = await import(
 // network.ts imports the real (unmocked) "./breadcrumbs" — its module-
 // level trail is shared across every test file in this bun:test
 // process, same as breadcrumbs.test.ts/navigation.test.ts/
-// interactions.test.ts already have to account for. Reset after every
-// test here too, so this file never leaks recorded breadcrumbs into
-// whichever file happens to run next.
+// interactions.test.ts already have to account for. Reset both before
+// *and* after: after-only reset was confirmed (in CI specifically, not
+// locally — file execution order differs between the two) to leave a
+// file's first test inheriting whatever residue the previous file left
+// behind, since nothing guarantees this file runs first.
+beforeEach(() => {
+	__resetBreadcrumbsForTests();
+});
 afterEach(() => {
 	__resetBreadcrumbsForTests();
 });

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
 	__resetBreadcrumbsForTests,
 	addBreadcrumb,
@@ -6,6 +6,17 @@ import {
 	recordBreadcrumb,
 } from "./breadcrumbs";
 
+// Reset both before *and* after — this module's trail is a shared,
+// process-wide singleton (bun:test runs every file in one process), so
+// a before-only or after-only reset only protects this file against
+// itself. Whichever file happens to run immediately before this one
+// (file execution order isn't guaranteed identical between a local run
+// and CI — confirmed empirically: this exact asymmetry passed 3/3 local
+// runs but failed in CI) could leave residue this file's first test
+// would otherwise inherit.
+beforeEach(() => {
+	__resetBreadcrumbsForTests();
+});
 afterEach(() => {
 	__resetBreadcrumbsForTests();
 });

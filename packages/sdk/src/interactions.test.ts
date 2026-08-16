@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { __resetBreadcrumbsForTests, getBreadcrumbTrail } from "./breadcrumbs";
 import { registerInteractionInstrumentation } from "./interactions";
 
@@ -7,6 +7,14 @@ import { registerInteractionInstrumentation } from "./interactions";
 // how index.ts's production code only ever calls it once.
 registerInteractionInstrumentation();
 
+// Reset both before *and* after — breadcrumbs.ts's trail is a shared,
+// process-wide singleton (bun:test runs every file in one process).
+// After-only reset was confirmed (in CI, not locally — file execution
+// order differs) to leave this file's first test inheriting whatever
+// residue the previous file's own tests left behind.
+beforeEach(() => {
+	__resetBreadcrumbsForTests();
+});
 afterEach(() => {
 	__resetBreadcrumbsForTests();
 	document.body.innerHTML = "";
