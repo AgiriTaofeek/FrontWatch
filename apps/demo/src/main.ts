@@ -71,6 +71,26 @@ document.getElementById("handledError")?.addEventListener("click", () => {
 	}
 });
 
+document.getElementById("sensitiveError")?.addEventListener("click", () => {
+	if (!initialized) {
+		log("Initialize the SDK first.");
+		return;
+	}
+	try {
+		// The raw message below is what this page logs locally — open the
+		// Network tab on the request to /ingest/v1/events to see that the
+		// email/card/token never left the browser unredacted (privacy.ts).
+		throw new Error(
+			"transfer failed for jane.doe@example.com, card 4111 1111 1111 1111, token=abc.def.ghi",
+		);
+	} catch (error) {
+		captureException(error);
+		log(
+			"Captured an error with sensitive data — check the outgoing request body, not this log, to see it redacted",
+		);
+	}
+});
+
 document.getElementById("goodFetch")?.addEventListener("click", async () => {
 	if (!initialized) {
 		log("Initialize the SDK first.");

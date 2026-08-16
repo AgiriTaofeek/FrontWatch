@@ -7,9 +7,15 @@ import { registerErrorInstrumentation } from "./errors";
 import { registerNetworkInstrumentation } from "./network";
 import { registerPerformanceInstrumentation } from "./performance";
 
+export type { InitOptions } from "./client";
 export { registerErrorInstrumentation } from "./errors";
 export { registerNetworkInstrumentation } from "./network";
 export { registerPerformanceInstrumentation } from "./performance";
+// Public so a consuming app can actually name these types when building
+// its own customRules config (US-16.01: "redaction rules can be
+// configured") — exported from client.ts's InitOptions type already, but
+// re-exported here directly too since that's the more discoverable name.
+export type { PrivacyConfig, PrivacyRule } from "./privacy";
 export { captureException };
 
 // core-architecture.md lists "register instrumentation" as one of

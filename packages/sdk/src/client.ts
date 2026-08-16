@@ -9,13 +9,18 @@ import {
 	type NetworkPayload,
 	type PerformancePayload,
 } from "./event";
-import { applyPrivacy } from "./privacy";
+import { applyPrivacy, type PrivacyConfig } from "./privacy";
 import { Transport } from "./transport";
 
 export interface InitOptions extends SdkConfig {
 	publicKey: string;
 	endpoint: string;
 	debug?: boolean;
+	// Custom redaction rules on top of privacy.ts's always-on built-ins —
+	// see that file's own comment for why maskText/maskInputs/redactHeaders
+	// aren't config options yet (nothing captures DOM text/inputs/headers
+	// for them to gate today).
+	privacy?: PrivacyConfig;
 }
 
 export class Client {
@@ -79,7 +84,7 @@ export class Client {
 	// being factored out (event *construction* stays separate per
 	// type, in event.ts, since that part genuinely differs).
 	private recordEvent(event: FrontwatchEvent): void {
-		this.buffer.add(applyPrivacy(event));
+		this.buffer.add(applyPrivacy(event, this.config.privacy));
 		// Skeleton: flush immediately rather than on a timer/threshold —
 		// real flush scheduling (interval, buffer-full threshold, shutdown
 		// flush) is follow-up work, once there's an actual reason to batch
