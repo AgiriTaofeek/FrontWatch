@@ -70,6 +70,9 @@
 			<legend>2. Generate telemetry</legend>
 			<button type="button" id="unhandledError">Throw an unhandled error</button>
 			<button type="button" id="handledError">Capture a handled error</button>
+			<button type="button" id="sensitiveError">
+				Capture an error with sensitive data (redacted before send)
+			</button>
 			<button type="button" id="goodFetch">Make a successful request</button>
 			<button type="button" id="badFetch">Make a failing request (404)</button>
 			<button type="button" id="slowFetch">Make a slow request (~1.5s)</button>
