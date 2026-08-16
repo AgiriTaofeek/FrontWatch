@@ -1,9 +1,20 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { __resetBreadcrumbsForTests, getBreadcrumbTrail } from "./breadcrumbs";
-import {
-	__resetNavigationForTests,
-	registerNavigationInstrumentation,
-} from "./navigation";
+import type { NavigationPayload } from "./event";
+
+// Same reasoning as errors.test.ts/network.test.ts's mock: complete
+// shape, since mock.module replaces "./client" in the shared registry
+// for the whole test run.
+const captureNavigationEventMock = mock((_payload: NavigationPayload) => {});
+mock.module("./client", () => ({
+	captureException: mock(() => {}),
+	captureNetworkEvent: mock(() => {}),
+	capturePerformanceEvent: mock(() => {}),
+	captureNavigationEvent: captureNavigationEventMock,
+}));
+
+const { __resetNavigationForTests, registerNavigationInstrumentation } =
+	await import("./navigation");
 
 // Registered exactly once, matching how index.ts's own production code
 // only ever calls this once (guarded by instrumentationRegistered) —
@@ -35,13 +46,14 @@ beforeEach(() => {
 	__resetNavigationForTests();
 	window.history.replaceState(null, "", "/start");
 	__resetBreadcrumbsForTests();
+	captureNavigationEventMock.mockClear();
 });
 
 afterEach(() => {
 	window.history.replaceState(null, "", "/");
 });
 
-describe("registerNavigationInstrumentation", () => {
+describe("registerNavigationInstrumentation — breadcrumb", () => {
 	it("records a breadcrumb on pushState to a new path", () => {
 		window.history.pushState(null, "", "/accounts");
 
@@ -96,5 +108,50 @@ describe("registerNavigationInstrumentation", () => {
 	it("never includes the query string in the recorded path", () => {
 		window.history.pushState(null, "", "/search?q=secret");
 		expect(getBreadcrumbTrail()[0]?.message).toBe("Navigation -> /search");
+	});
+});
+
+describe("registerNavigationInstrumentation — standalone event", () => {
+	it("captures a navigation event on pushState, with the correct navigationType", () => {
+		window.history.pushState(null, "", "/accounts");
+
+		expect(captureNavigationEventMock).toHaveBeenCalledTimes(1);
+		expect(captureNavigationEventMock).toHaveBeenCalledWith({
+			fromRoute: "/start",
+			toRoute: "/accounts",
+			navigationType: "push",
+		});
+	});
+
+	it("captures a navigation event on replaceState, with the correct navigationType", () => {
+		window.history.replaceState(null, "", "/profile");
+
+		expect(captureNavigationEventMock).toHaveBeenCalledWith({
+			fromRoute: "/start",
+			toRoute: "/profile",
+			navigationType: "replace",
+		});
+	});
+
+	it("does not capture an event for the very first page load", () => {
+		__resetNavigationForTests();
+		window.history.pushState(null, "", "/wherever");
+		expect(captureNavigationEventMock).not.toHaveBeenCalled();
+	});
+
+	it("does not capture an event for a no-op state change to the same path", () => {
+		window.history.pushState({ some: "state" }, "", "/start");
+		expect(captureNavigationEventMock).not.toHaveBeenCalled();
+	});
+
+	it("fromRoute is the previous path, not null, on a second real transition", () => {
+		window.history.pushState(null, "", "/accounts");
+		window.history.pushState(null, "", "/settings");
+
+		expect(captureNavigationEventMock).toHaveBeenLastCalledWith({
+			fromRoute: "/accounts",
+			toRoute: "/settings",
+			navigationType: "push",
+		});
 	});
 });

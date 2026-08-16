@@ -12,6 +12,7 @@ mock.module("./client", () => ({
 	captureException: captureExceptionMock,
 	captureNetworkEvent: mock(() => {}),
 	capturePerformanceEvent: mock(() => {}),
+	captureNavigationEvent: mock(() => {}),
 }));
 
 const { registerErrorInstrumentation } = await import("./errors");

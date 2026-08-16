@@ -9,6 +9,7 @@ mock.module("./client", () => ({
 	captureException: mock(() => {}),
 	captureNetworkEvent: mock(() => {}),
 	capturePerformanceEvent: capturePerformanceEventMock,
+	captureNavigationEvent: mock(() => {}),
 }));
 
 // web-vitals' own algorithms (LCP/CLS/INP session-windowing,

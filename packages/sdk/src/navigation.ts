@@ -1,12 +1,16 @@
 import { recordBreadcrumb } from "./breadcrumbs";
+import { captureNavigationEvent } from "./client";
 
 // instrumentation.md §Navigation: "Captures client-side route
-// transitions (SPA)." This is deliberately narrower than that section's
-// full scope — it records a *breadcrumb* per route change, not a
-// distinct navigation/pageview event (that's tracked separately as its
-// own still-open gap in PROGRESS.md's Post-MVP gap closure list; this
-// module is a real, useful step toward it, not a silent substitute for
-// it).
+// transitions (SPA)... Event shape: {event_type: "navigation",
+// from_route, to_route, navigation_type}." Two consumers of the same
+// underlying route-change signal, both real: a "navigation" breadcrumb
+// (context attached to a *future* error, breadcrumbs.ts) and a
+// standalone, independently-queryable navigation event
+// (createNavigationEvent, event.ts) — PROGRESS.md's Post-MVP gap
+// closure list originally tracked these as two separate gaps for
+// exactly this reason (the breadcrumb alone isn't a substitute for a
+// queryable event, and vice versa).
 //
 // Framework-independent by design (ADR-005) — this patches the
 // standard History API directly rather than depending on any router's
@@ -14,18 +18,25 @@ import { recordBreadcrumb } from "./breadcrumbs";
 // specific parameterization is later work" reasoning context.ts's route
 // field already documents.
 
+type NavigationType = "push" | "replace" | "pop";
+
 let previousPath: string | undefined;
 
-function recordNavigationIfChanged(): void {
+function recordNavigationIfChanged(navigationType: NavigationType): void {
 	const currentPath = window.location.pathname;
 	// Skips the very first call (previousPath is still undefined) — that's
 	// page load, not a transition, and skips a no-op state change to the
 	// same path (e.g. a hash-only update or a replaceState that doesn't
-	// actually move the user anywhere) rather than spamming a breadcrumb
-	// for it. instrumentation.md's Navigation section: query strings are
-	// never captured — window.location.pathname already excludes them.
+	// actually move the user anywhere) rather than spamming a breadcrumb/
+	// event for it. instrumentation.md's Navigation section: query strings
+	// are never captured — window.location.pathname already excludes them.
 	if (previousPath !== undefined && previousPath !== currentPath) {
 		recordBreadcrumb("navigation", `Navigation -> ${currentPath}`);
+		captureNavigationEvent({
+			fromRoute: previousPath,
+			toRoute: currentPath,
+			navigationType,
+		});
 	}
 	previousPath = currentPath;
 }
@@ -44,19 +55,19 @@ export function registerNavigationInstrumentation(): void {
 		...args: Parameters<typeof history.pushState>
 	) => {
 		originalPushState(...args);
-		recordNavigationIfChanged();
+		recordNavigationIfChanged("push");
 	};
 
 	window.history.replaceState = (
 		...args: Parameters<typeof history.replaceState>
 	) => {
 		originalReplaceState(...args);
-		recordNavigationIfChanged();
+		recordNavigationIfChanged("replace");
 	};
 
 	// Back/forward navigation doesn't go through pushState/replaceState at
 	// all — popstate is the only signal for it.
-	window.addEventListener("popstate", recordNavigationIfChanged);
+	window.addEventListener("popstate", () => recordNavigationIfChanged("pop"));
 }
 
 // Test-only reset — same reasoning as breadcrumbs.ts's own

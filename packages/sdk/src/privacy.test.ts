@@ -4,6 +4,7 @@ import type {
 	Breadcrumb,
 	ErrorPayload,
 	FrontwatchEvent,
+	NavigationPayload,
 	NetworkPayload,
 	PerformancePayload,
 } from "./event";
@@ -65,6 +66,24 @@ function performanceEvent(
 			value: 1800,
 			rating: "good",
 			navigationType: "navigate",
+			...payload,
+		},
+	};
+}
+
+function navigationEvent(
+	payload: Partial<NavigationPayload> = {},
+): FrontwatchEvent {
+	return {
+		eventId: "event-4",
+		schemaVersion: 1,
+		clientTimestamp: "2026-08-16T00:00:00.000Z",
+		context: baseContext,
+		eventType: "navigation",
+		payload: {
+			fromRoute: "/accounts",
+			toRoute: "/settings",
+			navigationType: "push",
 			...payload,
 		},
 	};
@@ -170,6 +189,29 @@ describe("applyPrivacy — built-in rules", () => {
 			navigationType: "navigate",
 		});
 		expect(result.context.route).toBe("/reset-password/[REDACTED]");
+	});
+
+	it("redacts a navigation event's toRoute", () => {
+		const result = applyPrivacy(
+			navigationEvent({ toRoute: "/accounts/jane.doe@example.com" }),
+		);
+		expect((result.payload as NavigationPayload).toRoute).toBe(
+			"/accounts/[REDACTED]",
+		);
+	});
+
+	it("redacts a navigation event's fromRoute when present", () => {
+		const result = applyPrivacy(
+			navigationEvent({ fromRoute: "/accounts/jane.doe@example.com" }),
+		);
+		expect((result.payload as NavigationPayload).fromRoute).toBe(
+			"/accounts/[REDACTED]",
+		);
+	});
+
+	it("leaves a null fromRoute as null, not redacted into a string", () => {
+		const result = applyPrivacy(navigationEvent({ fromRoute: null }));
+		expect((result.payload as NavigationPayload).fromRoute).toBeNull();
 	});
 
 	it("preserves every non-string field unchanged", () => {

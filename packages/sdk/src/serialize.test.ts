@@ -60,6 +60,46 @@ describe("toWireEvent", () => {
 			]);
 		}
 	});
+
+	it("serializes a navigation event, mapping camelCase to the documented snake_case shape", () => {
+		const wire = toWireEvent({
+			...internalEvent,
+			eventType: "navigation",
+			payload: {
+				fromRoute: "/accounts",
+				toRoute: "/settings",
+				navigationType: "push",
+			},
+		});
+
+		expect(wire.event_type).toBe("navigation");
+		if (wire.event_type === "navigation") {
+			expect(wire.payload).toEqual({
+				from_route: "/accounts",
+				to_route: "/settings",
+				navigation_type: "push",
+			});
+		}
+	});
+
+	it("omits from_route from the actual JSON wire payload (not sent as null) for the very first navigation", () => {
+		const wire = toWireEvent({
+			...internalEvent,
+			eventType: "navigation",
+			payload: { fromRoute: null, toRoute: "/start", navigationType: "push" },
+		});
+
+		if (wire.event_type === "navigation") {
+			// toWireEvent's own return value still carries the key with an
+			// `undefined` value (a plain object property assignment, not a
+			// JSON operation) — the actual "omitted, not null" guarantee
+			// only manifests once this is serialized, the same way it's
+			// really transmitted (transport.ts's JSON.stringify).
+			expect(wire.payload.from_route).toBeUndefined();
+			expect(JSON.stringify(wire.payload)).not.toContain("from_route");
+			expect(JSON.stringify(wire.payload)).not.toContain("null");
+		}
+	});
 });
 
 describe("toIngestRequest", () => {

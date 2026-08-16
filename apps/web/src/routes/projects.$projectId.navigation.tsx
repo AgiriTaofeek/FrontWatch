@@ -1,20 +1,21 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { HealthOverview } from "../features/health/HealthOverview";
+import { NavigationList } from "../features/navigation/NavigationList";
 
-export const Route = createFileRoute("/projects/$projectId/health")({
-	component: HealthPage,
+export const Route = createFileRoute("/projects/$projectId/navigation")({
+	component: NavigationPage,
 });
 
-function HealthPage() {
+function NavigationPage() {
 	const { projectId } = Route.useParams();
 	return (
 		<div>
+			<h1>Navigation</h1>
 			<nav>
+				<Link to="/projects/$projectId/health" params={{ projectId }}>
+					Health
+				</Link>{" "}
 				<Link to="/projects/$projectId/issues" params={{ projectId }}>
 					Issues
-				</Link>{" "}
-				<Link to="/projects/$projectId/navigation" params={{ projectId }}>
-					Navigation
 				</Link>{" "}
 				<Link to="/projects/$projectId/network" params={{ projectId }}>
 					Network
@@ -32,7 +33,7 @@ function HealthPage() {
 					Alerts
 				</Link>
 			</nav>
-			<HealthOverview projectId={projectId} />
+			<NavigationList projectId={projectId} />
 		</div>
 	);
 }

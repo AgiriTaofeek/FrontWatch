@@ -224,6 +224,72 @@ func TestEventWriter_WriteEvent_PerformanceEvent(t *testing.T) {
 	}
 }
 
+func TestEventWriter_WriteEvent_NavigationEvent(t *testing.T) {
+	addr := os.Getenv("CLICKHOUSE_ADDR")
+	if addr == "" {
+		t.Skip("CLICKHOUSE_ADDR not set, skipping ClickHouse integration test")
+	}
+
+	conn, err := NewConnection(addr,
+		os.Getenv("CLICKHOUSE_DATABASE"),
+		os.Getenv("CLICKHOUSE_USERNAME"),
+		os.Getenv("CLICKHOUSE_PASSWORD"),
+	)
+	if err != nil {
+		t.Fatalf("NewConnection() = %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	writer := NewEventWriter(conn)
+
+	fromRoute := "/accounts"
+	eventID := "evt_ch_nav_test_" + time.Now().Format(time.RFC3339Nano)
+	stored := StoredEvent{
+		Event: telemetry.Event{
+			EventID:       eventID,
+			EventType:     telemetry.EventTypeNavigation,
+			SchemaVersion: 1,
+			Timestamp:     time.Now().UTC().Truncate(time.Millisecond),
+			SessionID:     "sess_ch_nav_test",
+			Route:         "/settings",
+			NavigationPayload: &telemetry.NavigationPayload{
+				FromRoute:      &fromRoute,
+				ToRoute:        "/settings",
+				NavigationType: "push",
+			},
+		},
+		ProjectID:        "proj_ch_nav_test",
+		ServerReceivedAt: time.Now().UTC().Truncate(time.Millisecond),
+	}
+
+	ctx := context.Background()
+	if err := writer.WriteEvent(ctx, stored); err != nil {
+		t.Fatalf("WriteEvent() = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = conn.Exec(context.Background(), "ALTER TABLE events DELETE WHERE event_id = ?", eventID)
+	})
+
+	row := conn.QueryRow(ctx, `
+		SELECT event_type, payload
+		FROM events WHERE event_id = ?`, eventID)
+
+	var gotEventType, gotPayload string
+	if err := row.Scan(&gotEventType, &gotPayload); err != nil {
+		t.Fatalf("querying written event: %v", err)
+	}
+
+	if gotEventType != string(telemetry.EventTypeNavigation) {
+		t.Errorf("event_type = %q, want %q", gotEventType, telemetry.EventTypeNavigation)
+	}
+	if !strings.Contains(gotPayload, `"to_route":"/settings"`) {
+		t.Errorf("payload = %q, want it to contain the navigation payload's to_route", gotPayload)
+	}
+	if !strings.Contains(gotPayload, `"from_route":"/accounts"`) {
+		t.Errorf("payload = %q, want it to contain the navigation payload's from_route", gotPayload)
+	}
+}
+
 // TestEventWriter_WriteBatch covers the Step 9 Load testing follow-up
 // (PROGRESS.md): cmd/worker now writes a whole fetch's worth of events
 // in one PrepareBatch/Append/Send round trip instead of one INSERT per

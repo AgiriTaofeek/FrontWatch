@@ -46,6 +46,23 @@ export function toWireEvent(event: FrontwatchEvent): WireEvent {
 		};
 	}
 
+	if (event.eventType === "navigation") {
+		return {
+			...base,
+			event_type: "navigation",
+			payload: {
+				// Omitted entirely (not sent as null) when there's no prior
+				// route — WireNavigationPayload.from_route is `string |
+				// undefined`, not nullable, same "don't send a meaningless
+				// empty/null value" convention this file's `client` field
+				// already follows.
+				from_route: event.payload.fromRoute ?? undefined,
+				to_route: event.payload.toRoute,
+				navigation_type: event.payload.navigationType,
+			},
+		};
+	}
+
 	return {
 		...base,
 		event_type: "error",

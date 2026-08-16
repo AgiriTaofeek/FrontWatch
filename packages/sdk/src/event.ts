@@ -7,13 +7,13 @@ import type { Context } from "./context";
 // server-side (data-model.md §10: never trust a frontend-selected
 // tenant ID).
 //
-// Three event types now (error, network, performance) — a real
-// discriminated union, per this file's own earlier comment that said
-// to do this "when a second event_type is real." breadcrumb/navigation/
-// interaction get added the same way when their instrumentation
-// modules exist, not speculatively now.
+// Four event types now (error, network, performance, navigation) — a
+// real discriminated union, per this file's own earlier comment that
+// said to do this "when a second event_type is real." breadcrumb stays
+// out of this union deliberately (attached to ErrorPayload instead, see
+// Breadcrumb below) — a real design decision, not an oversight.
 
-export type EventType = "error" | "network" | "performance";
+export type EventType = "error" | "network" | "performance" | "navigation";
 
 // instrumentation.md §Breadcrumbs' full category list. "performance" is
 // part of that vocabulary but not emitted automatically yet (no
@@ -82,6 +82,24 @@ export interface PerformancePayload {
 	navigationType: string;
 }
 
+// instrumentation.md §Navigation: "Captures client-side route
+// transitions (SPA)... Event shape: {event_type: "navigation",
+// from_route, to_route, navigation_type}." A standalone, independently-
+// queryable event — distinct from breadcrumbs.ts's "navigation"
+// category breadcrumb, which is a trail entry attached to a *future
+// error*, not something investigable on its own. Both fire from the
+// same underlying History API patch in navigation.ts; this is the
+// other, real half of what that instrumentation.md section asks for
+// (PROGRESS.md's Post-MVP gap closure list tracked this gap
+// separately from breadcrumbs' navigation category for exactly this
+// reason). fromRoute is null for the very first navigation this SDK
+// instance observes — there is no prior route to report.
+export interface NavigationPayload {
+	fromRoute: string | null;
+	toRoute: string;
+	navigationType: "push" | "replace" | "pop";
+}
+
 interface FrontwatchEventBase {
 	eventId: string;
 	schemaVersion: 1;
@@ -95,6 +113,10 @@ export type FrontwatchEvent =
 	| (FrontwatchEventBase & {
 			eventType: "performance";
 			payload: PerformancePayload;
+	  })
+	| (FrontwatchEventBase & {
+			eventType: "navigation";
+			payload: NavigationPayload;
 	  });
 
 // Two constructors, not one generic — a shared generic here would need
@@ -139,6 +161,20 @@ export function createPerformanceEvent(
 		eventId: crypto.randomUUID(),
 		schemaVersion: 1,
 		eventType: "performance",
+		clientTimestamp: new Date().toISOString(),
+		context,
+		payload,
+	};
+}
+
+export function createNavigationEvent(
+	payload: NavigationPayload,
+	context: Context,
+): FrontwatchEvent {
+	return {
+		eventId: crypto.randomUUID(),
+		schemaVersion: 1,
+		eventType: "navigation",
 		clientTimestamp: new Date().toISOString(),
 		context,
 		payload,

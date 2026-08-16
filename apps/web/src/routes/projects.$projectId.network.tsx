@@ -14,6 +14,9 @@ function NetworkPage() {
 				<Link to="/projects/$projectId/health" params={{ projectId }}>
 					Health
 				</Link>{" "}
+				<Link to="/projects/$projectId/navigation" params={{ projectId }}>
+					Navigation
+				</Link>{" "}
 				<Link to="/projects/$projectId/issues" params={{ projectId }}>
 					Issues
 				</Link>{" "}

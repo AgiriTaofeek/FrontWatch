@@ -50,6 +50,20 @@ func validPerformanceEvent() Event {
 	}
 }
 
+func validNavigationEvent() Event {
+	fromRoute := "/accounts"
+	return Event{
+		EventID:   "evt_nav_123",
+		EventType: EventTypeNavigation,
+		Timestamp: time.Now(),
+		NavigationPayload: &NavigationPayload{
+			FromRoute:      &fromRoute,
+			ToRoute:        "/settings",
+			NavigationType: "push",
+		},
+	}
+}
+
 func TestEvent_Validate(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -140,6 +154,33 @@ func TestEvent_Validate(t *testing.T) {
 			event:   validPerformanceEvent(),
 			mutate:  func(e Event) Event { e.PerformancePayload.MetricName = ""; return e },
 			wantErr: ErrMissingMetricName,
+		},
+		{
+			name:    "valid navigation event passes",
+			event:   validNavigationEvent(),
+			mutate:  func(e Event) Event { return e },
+			wantErr: nil,
+		},
+		{
+			name:  "valid navigation event with a nil FromRoute still passes (the very first navigation)",
+			event: validNavigationEvent(),
+			mutate: func(e Event) Event {
+				e.NavigationPayload.FromRoute = nil
+				return e
+			},
+			wantErr: nil,
+		},
+		{
+			name:    "missing navigation payload",
+			event:   validNavigationEvent(),
+			mutate:  func(e Event) Event { e.NavigationPayload = nil; return e },
+			wantErr: ErrMissingPayload,
+		},
+		{
+			name:    "missing payload to_route",
+			event:   validNavigationEvent(),
+			mutate:  func(e Event) Event { e.NavigationPayload.ToRoute = ""; return e },
+			wantErr: ErrMissingToRoute,
 		},
 	}
 
@@ -275,6 +316,57 @@ func TestEvent_JSONRoundTrip(t *testing.T) {
 		}
 		if got.PerformancePayload == nil || *got.PerformancePayload != *want.PerformancePayload {
 			t.Errorf("PerformancePayload = %+v, want %+v", got.PerformancePayload, want.PerformancePayload)
+		}
+	})
+
+	t.Run("navigation event", func(t *testing.T) {
+		want := validNavigationEvent()
+		want.SchemaVersion = 1
+
+		data, err := json.Marshal(want)
+		if err != nil {
+			t.Fatalf("Marshal() = %v", err)
+		}
+
+		var got Event
+		if err := json.Unmarshal(data, &got); err != nil {
+			t.Fatalf("Unmarshal() = %v", err)
+		}
+
+		if got.ErrorPayload != nil {
+			t.Errorf("ErrorPayload = %+v, want nil", got.ErrorPayload)
+		}
+		// reflect.DeepEqual, not !=/== — NavigationPayload.FromRoute is a
+		// *string; a plain != on the struct would compare pointer identity
+		// (always different after a real JSON round-trip's fresh
+		// allocation), not the pointed-to string content, the same class
+		// of gotcha the []Breadcrumb slice field already taught this file
+		// once for ErrorPayload.
+		if got.NavigationPayload == nil || !reflect.DeepEqual(*got.NavigationPayload, *want.NavigationPayload) {
+			t.Errorf("NavigationPayload = %+v, want %+v", got.NavigationPayload, want.NavigationPayload)
+		}
+	})
+
+	t.Run("navigation event with a nil FromRoute round-trips as nil, not an empty string", func(t *testing.T) {
+		want := validNavigationEvent()
+		want.SchemaVersion = 1
+		want.NavigationPayload.FromRoute = nil
+
+		data, err := json.Marshal(want)
+		if err != nil {
+			t.Fatalf("Marshal() = %v", err)
+		}
+
+		var got Event
+		if err := json.Unmarshal(data, &got); err != nil {
+			t.Fatalf("Unmarshal() = %v", err)
+		}
+
+		if got.NavigationPayload == nil {
+			t.Fatalf("NavigationPayload = nil, want a payload")
+		}
+		if got.NavigationPayload.FromRoute != nil {
+			t.Errorf("FromRoute = %v, want nil", *got.NavigationPayload.FromRoute)
 		}
 	})
 

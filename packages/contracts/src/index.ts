@@ -30,6 +30,10 @@ export type {
 	OccurrenceSummary,
 } from "./issues";
 export type {
+	ListNavigationTransitionsResponse,
+	NavigationTransitionSummary,
+} from "./navigation";
+export type {
 	ListNetworkResourcesResponse,
 	NetworkResourceSummary,
 } from "./network";
@@ -58,6 +62,7 @@ export type {
 	WireErrorPayload,
 	WireEvent,
 	WireEventType,
+	WireNavigationPayload,
 	WireNetworkPayload,
 	WirePerformancePayload,
 } from "./telemetry";
