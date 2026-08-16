@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>FrontWatch SDK demo</title>
+		<style>
+			body {
+				font-family: system-ui, sans-serif;
+				max-width: 640px;
+				margin: 2rem auto;
+				padding: 0 1rem;
+			}
+			fieldset {
+				margin-bottom: 1.5rem;
+			}
+			label {
+				display: block;
+				margin-bottom: 0.5rem;
+			}
+			input {
+				width: 100%;
+				box-sizing: border-box;
+				padding: 0.4rem;
+			}
+			button {
+				margin: 0.25rem 0.5rem 0.25rem 0;
+				padding: 0.5rem 0.75rem;
+			}
+			#log {
+				background: #f4f4f4;
+				border: 1px solid #ccc;
+				padding: 0.75rem;
+				font-family: monospace;
+				font-size: 0.85rem;
+				white-space: pre-wrap;
+				height: 200px;
+				overflow-y: auto;
+			}
+			#status {
+				font-weight: bold;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>FrontWatch SDK demo</h1>
+		<p>
+			A real, clickable page instrumented with <code>@frontwatch/sdk</code> —
+			not a product surface, just something to generate real telemetry from
+			so you can watch it land in the dashboard. Every button below triggers
+			a real browser event the SDK's automatic instrumentation actually
+			captures (no manual/simulated calls except where noted).
+		</p>
+
+		<fieldset>
+			<legend>1. Configure</legend>
+			<label>
+				Public key (from creating a project)
+				<input id="publicKey" placeholder="fw_pk_..." />
+			</label>
+			<label>
+				Ingestion endpoint
+				<input id="endpoint" value="http://localhost:8080" />
+			</label>
+			<button type="button" id="init">Initialize SDK</button>
+			<p id="status">Not initialized.</p>
+		</fieldset>
+
+		<fieldset>
+			<legend>2. Generate telemetry</legend>
+			<button type="button" id="unhandledError">Throw an unhandled error</button>
+			<button type="button" id="handledError">Capture a handled error</button>
+			<button type="button" id="goodFetch">Make a successful request</button>
+			<button type="button" id="badFetch">Make a failing request (404)</button>
+			<button type="button" id="slowFetch">Make a slow request (~1.5s)</button>
+			<p>
+				Performance metrics (LCP/CLS/etc, via <code>web-vitals</code>) report
+				on their own as you interact with the page — try scrolling or
+				clicking around after initializing.
+			</p>
+		</fieldset>
+
+		<fieldset>
+			<legend>Log</legend>
+			<div id="log"></div>
+		</fieldset>
+
+		<script type="module" src="/src/main.ts"></script>
+	</body>
+</html>

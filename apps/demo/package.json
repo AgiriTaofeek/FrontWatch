@@ -1,0 +1,14 @@
+{
+	"name": "@frontwatch/demo",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "vite dev --port 3002"
+	},
+	"dependencies": {
+		"@frontwatch/sdk": "workspace:*"
+	},
+	"devDependencies": {
+		"vite": "^8.2.1"
+	}
+}
