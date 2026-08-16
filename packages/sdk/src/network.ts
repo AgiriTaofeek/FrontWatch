@@ -44,9 +44,16 @@ export interface NetworkInstrumentationOptions {
 	ignoreUrlPrefix: string;
 }
 
+// SSR-safety guard — see errors.ts's identical comment for why. This
+// module also patches window.fetch as a side effect, which would leak a
+// broken/unnecessary wrapper onto whatever `fetch` a server runtime
+// provides if it ever ran there.
 export function registerNetworkInstrumentation(
 	options: NetworkInstrumentationOptions,
 ): void {
+	if (typeof window === "undefined") {
+		return;
+	}
 	const originalFetch = window.fetch.bind(window);
 
 	// `as typeof fetch`: @types/bun augments the global `fetch` with a

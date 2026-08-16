@@ -28,7 +28,13 @@ function handleClick(event: MouseEvent): void {
 	recordBreadcrumb("interaction", `Click -> ${describeTarget(event.target)}`);
 }
 
+// SSR-safety guard — see errors.ts's identical comment for why. Checks
+// `document` specifically (not just `window`), matching what this
+// function actually touches.
 export function registerInteractionInstrumentation(): void {
+	if (typeof document === "undefined") {
+		return;
+	}
 	// capture: true so this observes the click regardless of whether some
 	// deeper handler calls stopPropagation() — same "must never alter
 	// application behavior" principle network.ts's fetch wrapper follows,
