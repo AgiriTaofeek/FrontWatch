@@ -16,12 +16,36 @@ export interface IssueSummary {
 	latestRoute: string | null;
 }
 
+// Mirrors packages/sdk's Breadcrumb/BreadcrumbCategory — a separate
+// definition rather than a shared import, since packages/contracts
+// isn't an sdk dependency and shouldn't become one just for a type this
+// small. Kept namespaced (Occurrence-prefixed) so it can't be confused
+// with a future control-api-side breadcrumb concept if one ever exists.
+export type OccurrenceBreadcrumbCategory =
+	| "navigation"
+	| "interaction"
+	| "network"
+	| "error"
+	| "performance"
+	| "custom";
+
+export interface OccurrenceBreadcrumb {
+	category: OccurrenceBreadcrumbCategory;
+	message: string;
+	timestamp: string;
+	data?: Record<string, unknown>;
+}
+
 export interface OccurrenceSummary {
 	eventId: string;
 	occurredAt: string;
 	release: string | null;
 	route: string | null;
 	sessionId: string | null;
+	// The trail attached to this occurrence's error payload, oldest
+	// first — empty when the SDK version that captured it predates
+	// breadcrumbs, or genuinely had nothing to record yet.
+	breadcrumbs: OccurrenceBreadcrumb[];
 }
 
 export interface IssueDetail extends IssueSummary {

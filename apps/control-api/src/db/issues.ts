@@ -1,6 +1,7 @@
 import type {
 	IssueDetail,
 	IssueSummary,
+	OccurrenceBreadcrumb,
 	OccurrenceSummary,
 } from "@frontwatch/contracts";
 import { clickhouse, toClickHouseDateTime64 } from "./clickhouse";
@@ -125,6 +126,32 @@ interface OccurrenceRow {
 	release: string;
 	route: string;
 	session_id: string;
+	// Raw JSON array text (ClickHouse's JSONExtractRaw, not
+	// JSONExtractString — breadcrumbs is a nested array, not a scalar).
+	// "" when the occurrence's payload has no breadcrumbs field at all
+	// (an error captured before any breadcrumb existed, or one with an
+	// empty trail that client.ts omitted rather than sending `[]`).
+	breadcrumbs_json: string;
+}
+
+// Trusts the shape client-side privacy.ts already redacted before this
+// ever left the browser — this parse only has to be defensive about
+// *malformed* JSON (a payload from an older/different SDK version), not
+// re-validate every field's semantics.
+function parseOccurrenceBreadcrumbs(raw: string): OccurrenceBreadcrumb[] {
+	if (!raw) {
+		return [];
+	}
+	try {
+		const parsed = JSON.parse(raw);
+		return Array.isArray(parsed) ? (parsed as OccurrenceBreadcrumb[]) : [];
+	} catch {
+		// Malformed JSON must never break the whole issue-detail response
+		// over one occurrence's optional breadcrumb trail — same
+		// fail-soft reasoning session summaries already use for payload
+		// fields elsewhere in this file.
+		return [];
+	}
 }
 
 // api-contracts.md's GET /issues/{id}/occurrences is cursor-paginated
@@ -156,7 +183,13 @@ export async function getIssue(
 
 	const occurrencesResult = await clickhouse.query({
 		query: `
-			SELECT event_id, client_timestamp AS occurred_at, release, route, session_id
+			SELECT
+				event_id,
+				client_timestamp AS occurred_at,
+				release,
+				route,
+				session_id,
+				JSONExtractRaw(payload, 'breadcrumbs') AS breadcrumbs_json
 			FROM events
 			WHERE project_id = {projectId:String} AND fingerprint = {fingerprint:String}
 			ORDER BY client_timestamp DESC
@@ -179,6 +212,7 @@ export async function getIssue(
 		release: row.release || null,
 		route: row.route || null,
 		sessionId: row.session_id || null,
+		breadcrumbs: parseOccurrenceBreadcrumbs(row.breadcrumbs_json),
 	}));
 
 	return { ...toSummary(projectId, summary), recentOccurrences };

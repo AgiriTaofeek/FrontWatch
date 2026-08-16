@@ -46,6 +46,7 @@ export function IssueDetail({ issueId }: { issueId: string }) {
 							<th>Release</th>
 							<th>Route</th>
 							<th>Session</th>
+							<th>Breadcrumbs</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -66,6 +67,34 @@ export function IssueDetail({ issueId }: { issueId: string }) {
 										</Link>
 									) : (
 										"—"
+									)}
+								</td>
+								<td>
+									{/* E07.03 "View Timeline" — the trail leading up to
+									 * this specific occurrence, not a separate page. A
+									 * <details> disclosure keeps the table itself compact
+									 * (this is a per-row addition, could get long) while
+									 * still making the trail one click away, not hidden
+									 * behind a whole separate navigation. */}
+									{occurrence.breadcrumbs.length === 0 ? (
+										"—"
+									) : (
+										<details>
+											<summary>
+												{occurrence.breadcrumbs.length} breadcrumb
+												{occurrence.breadcrumbs.length === 1 ? "" : "s"}
+											</summary>
+											<ol>
+												{occurrence.breadcrumbs.map((breadcrumb) => (
+													<li
+														key={`${breadcrumb.timestamp}-${breadcrumb.category}`}
+													>
+														<strong>{breadcrumb.category}</strong>{" "}
+														{breadcrumb.message}
+													</li>
+												))}
+											</ol>
+										</details>
 									)}
 								</td>
 							</tr>

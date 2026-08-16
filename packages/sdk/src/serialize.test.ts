@@ -32,6 +32,34 @@ describe("toWireEvent", () => {
 	it("produces exactly the documented wire shape (snake_case, flat)", () => {
 		expect(toWireEvent(internalEvent)).toEqual(sampleRequest.events[0]);
 	});
+
+	it("passes an attached breadcrumb trail through unchanged (no field-name mapping needed)", () => {
+		const wire = toWireEvent({
+			...internalEvent,
+			payload: {
+				...internalEvent.payload,
+				breadcrumbs: [
+					{
+						category: "network",
+						message: "GET /api/accounts -> 200",
+						timestamp: "2026-08-11T14:29:58.000Z",
+						data: { attempt: 1 },
+					},
+				],
+			},
+		});
+
+		if (wire.event_type === "error") {
+			expect(wire.payload.breadcrumbs).toEqual([
+				{
+					category: "network",
+					message: "GET /api/accounts -> 200",
+					timestamp: "2026-08-11T14:29:58.000Z",
+					data: { attempt: 1 },
+				},
+			]);
+		}
+	});
 });
 
 describe("toIngestRequest", () => {

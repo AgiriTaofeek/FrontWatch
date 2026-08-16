@@ -1,5 +1,10 @@
 import type { Context } from "./context";
-import type { ErrorPayload, FrontwatchEvent, NetworkPayload } from "./event";
+import type {
+	Breadcrumb,
+	ErrorPayload,
+	FrontwatchEvent,
+	NetworkPayload,
+} from "./event";
 
 // ADR-007: redact/filter sensitive data client-side, before transmission,
 // wherever technically possible — the first of two redaction layers.
@@ -10,14 +15,18 @@ import type { ErrorPayload, FrontwatchEvent, NetworkPayload } from "./event";
 // next stage after capture, same position the earlier no-op occupied).
 //
 // Scope of this pass: pattern-based redaction over the string fields this
-// SDK actually captures today (error message/stack trace, the normalized
-// network resource path, the route pathname). privacy-and-security.md's
-// full redaction-layer list also names DOM/input filtering and header
-// filtering — both apply to data this SDK doesn't capture at all yet
-// (breadcrumbs/interactions, request/response headers), so there is
-// nothing to gate there today; wiring those flags in now would just be
+// SDK actually captures today (error message/stack trace, breadcrumb
+// messages/data attached to an error, the normalized network resource
+// path, the route pathname). privacy-and-security.md's full redaction-
+// layer list also names header filtering — this SDK doesn't capture
+// request/response headers at all (network.ts's own comment), so there
+// is nothing to gate there today; wiring that flag in now would just be
 // config that silently does nothing. Revisit when that instrumentation
-// exists, not before.
+// exists, not before. interactions.ts's own click-description function
+// is a *structural* guarantee against capturing input values/text
+// content (never collects them in the first place) rather than
+// something this redaction layer has to catch after the fact — see that
+// file's own comment.
 
 export interface PrivacyRule {
 	// Surfaced only in the fail-closed console warning below, so a
@@ -103,6 +112,37 @@ function redactString(value: string, rules: readonly PrivacyRule[]): string {
 	return result;
 }
 
+// data is an open Record<string, unknown> (a developer can pass anything
+// to addBreadcrumb's second argument) — only string *values* get run
+// through the redaction rules; a non-string value (number, boolean,
+// nested object) is left as-is, since the rules operate on strings and
+// this SDK doesn't capture free-text object values automatically anyway
+// (interactions.ts never populates `data` at all, only `message`).
+function redactBreadcrumbData(
+	data: Record<string, unknown>,
+	rules: readonly PrivacyRule[],
+): Record<string, unknown> {
+	const result: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(data)) {
+		result[key] =
+			typeof value === "string" ? redactString(value, rules) : value;
+	}
+	return result;
+}
+
+function redactBreadcrumb(
+	breadcrumb: Breadcrumb,
+	rules: readonly PrivacyRule[],
+): Breadcrumb {
+	return {
+		...breadcrumb,
+		message: redactString(breadcrumb.message, rules),
+		data: breadcrumb.data
+			? redactBreadcrumbData(breadcrumb.data, rules)
+			: breadcrumb.data,
+	};
+}
+
 function redactErrorPayload(
 	payload: ErrorPayload,
 	rules: readonly PrivacyRule[],
@@ -113,6 +153,11 @@ function redactErrorPayload(
 		stackTrace: payload.stackTrace
 			? redactString(payload.stackTrace, rules)
 			: payload.stackTrace,
+		// instrumentation.md §Breadcrumbs: "same privacy rules as any other
+		// telemetry apply" — the trail rides along inside this payload, so
+		// it goes through the exact same redaction as message/stackTrace,
+		// not a separate/weaker pass.
+		breadcrumbs: payload.breadcrumbs?.map((b) => redactBreadcrumb(b, rules)),
 	};
 }
 

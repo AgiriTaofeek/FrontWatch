@@ -54,6 +54,11 @@ export function toWireEvent(event: FrontwatchEvent): WireEvent {
 			exception_type: event.payload.exceptionType,
 			stack_trace: event.payload.stackTrace,
 			handled: event.payload.handled,
+			// Breadcrumb (camelCase category/message/timestamp/data) has no
+			// field names that differ from its wire shape — a direct
+			// pass-through, not a per-field mapping like the rest of this
+			// function needs.
+			breadcrumbs: event.payload.breadcrumbs,
 		},
 	};
 }

@@ -1,3 +1,4 @@
+import { getBreadcrumbTrail, recordBreadcrumb } from "./breadcrumbs";
 import { EventBuffer } from "./buffer";
 import { buildContext, type SdkConfig } from "./context";
 import {
@@ -53,8 +54,23 @@ export class Client {
 			return;
 		}
 		const payload = errorToPayload(error, handled);
+		// Trail is read *before* this error is recorded as its own
+		// breadcrumb below — it must describe what led up to this error,
+		// not include the error itself (breadcrumbs.ts's docs comment: "the
+		// trail leading up to it", instrumentation.md's own example ends
+		// its trail at "Error → TypeError", not after it). Omitted entirely
+		// (not sent as []) when there's nothing to attach yet — same
+		// "don't send a meaningless empty structure" convention this file
+		// already uses for the optional `client` field.
+		const trail = getBreadcrumbTrail();
+		if (trail.length > 0) {
+			payload.breadcrumbs = trail;
+		}
 		const context = buildContext(this.config);
 		this.recordEvent(createErrorEvent(payload, context));
+		// Recorded *after* attaching the trail above, so a second error
+		// later in the same session sees this one in its own trail.
+		recordBreadcrumb("error", `${payload.exceptionType}: ${payload.message}`);
 	}
 
 	// Automatic-only — instrumentation.md doesn't document a manual API

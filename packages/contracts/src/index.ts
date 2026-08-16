@@ -18,6 +18,8 @@ export type {
 	IssueDetail,
 	IssueSummary,
 	ListIssuesResponse,
+	OccurrenceBreadcrumb,
+	OccurrenceBreadcrumbCategory,
 	OccurrenceSummary,
 } from "./issues";
 export type {
@@ -43,6 +45,8 @@ export type {
 	IngestRejection,
 	IngestRequest,
 	IngestResponse,
+	WireBreadcrumb,
+	WireBreadcrumbCategory,
 	WireClient,
 	WireErrorPayload,
 	WireEvent,

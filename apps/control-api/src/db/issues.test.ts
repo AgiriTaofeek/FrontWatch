@@ -23,8 +23,32 @@ async function insertTestEvent(overrides: {
 	release?: string;
 	route?: string;
 	clientTimestamp: string;
+	// Defaults to the module-level `fingerprint` — overridable so a test
+	// can group its own rows under an isolated fingerprint without
+	// touching the shared occurrenceCount assertions elsewhere in this
+	// file.
+	fingerprint?: string;
+	// A raw JSON fragment substituted straight into the payload string
+	// as-is (not JSON.stringify'd) — lets a test construct a payload
+	// whose `breadcrumbs` value is genuinely malformed JSON, which
+	// JSON.stringify could never produce, to prove parseOccurrenceBreadcrumbs'
+	// fail-soft path against something real, not merely plausible.
+	rawBreadcrumbsJson?: string;
 }) {
 	insertedEventIds.push(overrides.eventId);
+	const payload: Record<string, unknown> = {
+		message: "Failed to load order 12345",
+		exception_type: "TypeError",
+		handled: false,
+	};
+	let payloadJson = JSON.stringify(payload);
+	if (overrides.rawBreadcrumbsJson !== undefined) {
+		payloadJson = payloadJson.replace(
+			/}$/,
+			`,"breadcrumbs":${overrides.rawBreadcrumbsJson}}`,
+		);
+	}
+
 	await clickhouse.insert({
 		table: "events",
 		values: [
@@ -38,13 +62,9 @@ async function insertTestEvent(overrides: {
 				release: overrides.release ?? "",
 				session_id: "",
 				route: overrides.route ?? "",
-				fingerprint,
+				fingerprint: overrides.fingerprint ?? fingerprint,
 				fingerprint_version: 1,
-				payload: JSON.stringify({
-					message: "Failed to load order 12345",
-					exception_type: "TypeError",
-					handled: false,
-				}),
+				payload: payloadJson,
 			},
 		],
 		format: "JSONEachRow",
@@ -92,6 +112,10 @@ describe("listIssues / getIssue (ADR-023 aggregation)", () => {
 		expect(issue?.occurrenceCount).toBe(2);
 		expect(issue?.recentOccurrences).toHaveLength(2);
 		expect(issue?.recentOccurrences[0]?.route).toBe("/checkout");
+		// Neither seeded event above has a breadcrumbs field at all — the
+		// realistic "SDK version predates breadcrumbs" case, not a
+		// contrived empty-array one.
+		expect(issue?.recentOccurrences[0]?.breadcrumbs).toEqual([]);
 	});
 
 	it("getIssue returns null for a fingerprint with no events", async () => {
@@ -197,6 +221,75 @@ describe("countRecentErrors (Step 8's error_spike alert type)", () => {
 		const count = await countRecentErrors(projectId, since);
 
 		expect(count).toBe(3);
+	});
+});
+
+describe("getIssue > occurrence breadcrumbs", () => {
+	// Its own fingerprint, isolated from the shared `fingerprint`/
+	// occurrenceCount assertions in the describe block above.
+	const bcFingerprint = `test_fp_bc_${Date.now()}`;
+
+	it("returns the breadcrumb trail attached to an occurrence's payload", async () => {
+		const eventId = `evt_bc_${Date.now()}`;
+		await insertTestEvent({
+			eventId,
+			fingerprint: bcFingerprint,
+			clientTimestamp: "2026-08-16 09:00:00.000",
+			rawBreadcrumbsJson: JSON.stringify([
+				{
+					category: "navigation",
+					message: "Navigation -> /accounts",
+					timestamp: "2026-08-16T08:59:58.000Z",
+				},
+				{
+					category: "network",
+					message: "GET /api/accounts -> 200",
+					timestamp: "2026-08-16T08:59:59.000Z",
+				},
+			]),
+		});
+
+		const issue = await getIssue(projectId, bcFingerprint);
+
+		expect(issue?.recentOccurrences).toHaveLength(1);
+		expect(issue?.recentOccurrences[0]?.breadcrumbs).toEqual([
+			{
+				category: "navigation",
+				message: "Navigation -> /accounts",
+				timestamp: "2026-08-16T08:59:58.000Z",
+			},
+			{
+				category: "network",
+				message: "GET /api/accounts -> 200",
+				timestamp: "2026-08-16T08:59:59.000Z",
+			},
+		]);
+	});
+
+	it("fails soft (empty array) when breadcrumbs is present but not an array, not a thrown error", async () => {
+		// A genuinely broken (unparseable) breadcrumbs *value* can't be
+		// constructed without also breaking the surrounding payload's own
+		// JSON validity — since JSON parsing is structural, not per-field,
+		// that would crash a different, pre-existing code path
+		// (toSummary's own unguarded JSON.parse of the *latest* payload)
+		// rather than exercise this function's own guard. A syntactically
+		// valid but wrong-shaped value (a string instead of an array) is
+		// the realistic failure this guard actually exists for — e.g. a
+		// future schema change or a different SDK version sending
+		// something unexpected here.
+		const eventId = `evt_bc_wrongshape_${Date.now()}`;
+		const wrongShapeFingerprint = `${bcFingerprint}_wrongshape`;
+		await insertTestEvent({
+			eventId,
+			fingerprint: wrongShapeFingerprint,
+			clientTimestamp: "2026-08-16 09:01:00.000",
+			rawBreadcrumbsJson: JSON.stringify("not an array"),
+		});
+
+		const issue = await getIssue(projectId, wrongShapeFingerprint);
+
+		expect(issue?.recentOccurrences).toHaveLength(1);
+		expect(issue?.recentOccurrences[0]?.breadcrumbs).toEqual([]);
 	});
 });
 

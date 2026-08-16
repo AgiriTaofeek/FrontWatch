@@ -1,3 +1,4 @@
+import { recordBreadcrumb } from "./breadcrumbs";
 import { captureNetworkEvent } from "./client";
 
 // Automatic capture of fetch requests. XHR instrumentation is
@@ -69,22 +70,32 @@ export function registerNetworkInstrumentation(
 
 		try {
 			const response = await originalFetch(...args);
+			const resource = normalizeResource(request.url, window.location.href);
 			captureNetworkEvent({
 				method: request.method,
-				resource: normalizeResource(request.url, window.location.href),
+				resource,
 				status: response.status,
 				durationMs: performance.now() - start,
 				outcome: response.ok ? "success" : "failure",
 			});
+			// instrumentation.md's own breadcrumb example: "Network -> GET
+			// /api/accounts -> 200" — same normalized resource the network
+			// event itself uses, not the raw URL.
+			recordBreadcrumb(
+				"network",
+				`${request.method} ${resource} -> ${response.status}`,
+			);
 			return response;
 		} catch (error) {
+			const resource = normalizeResource(request.url, window.location.href);
 			captureNetworkEvent({
 				method: request.method,
-				resource: normalizeResource(request.url, window.location.href),
+				resource,
 				status: 0,
 				durationMs: performance.now() - start,
 				outcome: "failure",
 			});
+			recordBreadcrumb("network", `${request.method} ${resource} -> failed`);
 			// Never swallow — the caller's own error handling must see
 			// exactly what it would have without this wrapper installed.
 			throw error;
