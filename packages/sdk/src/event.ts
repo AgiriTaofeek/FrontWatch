@@ -15,6 +15,35 @@ import type { Context } from "./context";
 
 export type EventType = "error" | "network" | "performance";
 
+// instrumentation.md §Breadcrumbs' full category list. "performance" is
+// part of that vocabulary but not emitted automatically yet (no
+// performance-breadcrumb source built in this pass — web-vitals'
+// callbacks fire on their own timeline, not tied to a user action worth
+// narrating) — kept in the type for forward compatibility rather than
+// narrowed to only what's emitted today.
+export type BreadcrumbCategory =
+	| "navigation"
+	| "interaction"
+	| "network"
+	| "error"
+	| "performance"
+	| "custom";
+
+// Attached to an error's payload as the trail leading up to it
+// (breadcrumbs.ts's bounded buffer) — not sent as its own event type,
+// per the design confirmed with the user (see PROGRESS.md's Post-MVP
+// gap closure section). `data` is deliberately untyped beyond
+// Record<string, unknown> — privacy.ts redacts every string value in it
+// the same way it redacts `message`, since instrumentation.md is
+// explicit that breadcrumb metadata is just as sensitive-capable as any
+// other telemetry field.
+export interface Breadcrumb {
+	category: BreadcrumbCategory;
+	message: string;
+	timestamp: string;
+	data?: Record<string, unknown>;
+}
+
 export interface ErrorPayload {
 	message: string;
 	exceptionType: string;
@@ -25,6 +54,7 @@ export interface ErrorPayload {
 		line?: number;
 		column?: number;
 	};
+	breadcrumbs?: Breadcrumb[];
 }
 
 // instrumentation.md §Network: safe metadata only — never request/

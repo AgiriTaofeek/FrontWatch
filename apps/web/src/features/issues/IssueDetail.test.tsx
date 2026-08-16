@@ -96,6 +96,7 @@ describe("IssueDetail", () => {
 					release: "4.2.0",
 					route: "/transfer",
 					sessionId: null,
+					breadcrumbs: [],
 				},
 			],
 		});
@@ -125,6 +126,7 @@ describe("IssueDetail", () => {
 					release: null,
 					route: null,
 					sessionId: null,
+					breadcrumbs: [],
 				},
 			],
 		});
@@ -151,6 +153,7 @@ describe("IssueDetail", () => {
 					release: null,
 					route: null,
 					sessionId: "sess_abc",
+					breadcrumbs: [],
 				},
 			],
 		});
@@ -160,5 +163,79 @@ describe("IssueDetail", () => {
 		// "sess_abc" (the occurrence's raw session id) — not the whole
 		// issueId, which would incorrectly append the fingerprint too.
 		expect(link.getAttribute("href")).toBe("/sessions/proj_1%3Asess_abc");
+	});
+
+	it("shows a dash for an occurrence with no breadcrumbs", async () => {
+		const { container } = renderWithIssue("proj_1:fp_1", {
+			issueId: "proj_1:fp_1",
+			fingerprint: "fp_1",
+			title: "x",
+			exceptionType: "Error",
+			occurrenceCount: 1,
+			firstSeenAt: "2026-08-14 08:00:00.000",
+			lastSeenAt: "2026-08-14 09:00:00.000",
+			latestRelease: null,
+			latestRoute: null,
+			recentOccurrences: [
+				{
+					eventId: "evt_1",
+					occurredAt: "2026-08-14 09:30:00.000",
+					release: null,
+					route: null,
+					sessionId: null,
+					breadcrumbs: [],
+				},
+			],
+		});
+
+		await screen.findByText("2026-08-14 09:30:00.000");
+		// "Breadcrumbs" is also the (always-present) column header, so a
+		// plain text query would match that regardless of this row's own
+		// data — the actual thing to assert is that this row rendered no
+		// <details> disclosure at all, not just "no visible text."
+		expect(container.querySelector("details")).toBeNull();
+	});
+
+	it("shows the breadcrumb count and trail for an occurrence that has one", async () => {
+		renderWithIssue("proj_1:fp_1", {
+			issueId: "proj_1:fp_1",
+			fingerprint: "fp_1",
+			title: "x",
+			exceptionType: "Error",
+			occurrenceCount: 1,
+			firstSeenAt: "2026-08-14 08:00:00.000",
+			lastSeenAt: "2026-08-14 09:00:00.000",
+			latestRelease: null,
+			latestRoute: null,
+			recentOccurrences: [
+				{
+					eventId: "evt_1",
+					occurredAt: "2026-08-14 09:30:00.000",
+					release: null,
+					route: null,
+					sessionId: null,
+					breadcrumbs: [
+						{
+							category: "navigation",
+							message: "Navigation -> /accounts",
+							timestamp: "2026-08-14T09:29:58.000Z",
+						},
+						{
+							category: "network",
+							message: "GET /api/accounts -> 200",
+							timestamp: "2026-08-14T09:29:59.000Z",
+						},
+					],
+				},
+			],
+		});
+
+		expect(await screen.findByText("2 breadcrumbs")).toBeTruthy();
+		// <details> content is present in the DOM (jsdom/happy-dom don't
+		// gate on the collapsed/open visual state the way a real browser's
+		// rendering would) — findByText works whether or not it would be
+		// visibly expanded in an actual browser.
+		expect(screen.getByText(/Navigation -> \/accounts/)).toBeTruthy();
+		expect(screen.getByText(/GET \/api\/accounts -> 200/)).toBeTruthy();
 	});
 });

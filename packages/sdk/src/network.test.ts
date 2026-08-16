@@ -1,4 +1,5 @@
-import { describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { __resetBreadcrumbsForTests, getBreadcrumbTrail } from "./breadcrumbs";
 import type { NetworkPayload } from "./event";
 
 // Typed as (payload: NetworkPayload) => void, not the untyped () => {}
@@ -21,6 +22,21 @@ mock.module("./client", () => ({
 const { normalizeResource, registerNetworkInstrumentation } = await import(
 	"./network"
 );
+
+// network.ts imports the real (unmocked) "./breadcrumbs" — its module-
+// level trail is shared across every test file in this bun:test
+// process, same as breadcrumbs.test.ts/navigation.test.ts/
+// interactions.test.ts already have to account for. Reset both before
+// *and* after: after-only reset was confirmed (in CI specifically, not
+// locally — file execution order differs between the two) to leave a
+// file's first test inheriting whatever residue the previous file left
+// behind, since nothing guarantees this file runs first.
+beforeEach(() => {
+	__resetBreadcrumbsForTests();
+});
+afterEach(() => {
+	__resetBreadcrumbsForTests();
+});
 
 describe("normalizeResource", () => {
 	it("replaces numeric path segments with :id", () => {
@@ -68,6 +84,13 @@ describe("registerNetworkInstrumentation", () => {
 			status: 200,
 			outcome: "success",
 		});
+
+		const trail = getBreadcrumbTrail();
+		expect(trail).toHaveLength(1);
+		expect(trail[0]).toMatchObject({
+			category: "network",
+			message: "GET /users/:id -> 200",
+		});
 	});
 
 	it("captures a failed (non-2xx) response as outcome failure", async () => {
@@ -81,6 +104,7 @@ describe("registerNetworkInstrumentation", () => {
 
 		const [call] = captureNetworkEventMock.mock.calls;
 		expect(call?.[0]).toMatchObject({ status: 500, outcome: "failure" });
+		expect(getBreadcrumbTrail()[0]?.message).toBe("GET /orders -> 500");
 	});
 
 	it("captures a network failure and still rethrows it (never swallows)", async () => {
@@ -98,6 +122,7 @@ describe("registerNetworkInstrumentation", () => {
 
 		const [call] = captureNetworkEventMock.mock.calls;
 		expect(call?.[0]).toMatchObject({ status: 0, outcome: "failure" });
+		expect(getBreadcrumbTrail()[0]?.message).toBe("GET /orders -> failed");
 	});
 
 	it("passes through requests to the ignored URL prefix without capturing", async () => {
@@ -114,5 +139,6 @@ describe("registerNetworkInstrumentation", () => {
 
 		expect(captureNetworkEventMock).not.toHaveBeenCalled();
 		expect(originalFetch).toHaveBeenCalledTimes(1);
+		expect(getBreadcrumbTrail()).toHaveLength(0);
 	});
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { Context } from "./context";
 import type {
+	Breadcrumb,
 	ErrorPayload,
 	FrontwatchEvent,
 	NetworkPayload,
@@ -178,6 +179,85 @@ describe("applyPrivacy — built-in rules", () => {
 		expect(result.schemaVersion).toBe(event.schemaVersion);
 		expect(result.clientTimestamp).toBe(event.clientTimestamp);
 		expect(result.eventType).toBe(event.eventType);
+	});
+});
+
+function breadcrumb(overrides: Partial<Breadcrumb> = {}): Breadcrumb {
+	return {
+		category: "custom",
+		message: "step",
+		timestamp: "2026-08-16T00:00:00.000Z",
+		...overrides,
+	};
+}
+
+describe("applyPrivacy — breadcrumbs", () => {
+	it("redacts a built-in pattern in a breadcrumb's message", () => {
+		const result = applyPrivacy(
+			errorEvent({
+				breadcrumbs: [
+					breadcrumb({ message: "clicked retry for jane.doe@example.com" }),
+				],
+			}),
+		);
+		expect((result.payload as ErrorPayload).breadcrumbs?.[0]?.message).toBe(
+			"clicked retry for [REDACTED]",
+		);
+	});
+
+	it("redacts string values inside a breadcrumb's data, leaving other types untouched", () => {
+		const result = applyPrivacy(
+			errorEvent({
+				breadcrumbs: [
+					breadcrumb({
+						data: {
+							note: "contact jane.doe@example.com",
+							attempt: 2,
+							retryable: true,
+						},
+					}),
+				],
+			}),
+		);
+		expect((result.payload as ErrorPayload).breadcrumbs?.[0]?.data).toEqual({
+			note: "contact [REDACTED]",
+			attempt: 2,
+			retryable: true,
+		});
+	});
+
+	it("redacts every breadcrumb in the trail, not just the first", () => {
+		const result = applyPrivacy(
+			errorEvent({
+				breadcrumbs: [
+					breadcrumb({ message: "one: jane.doe@example.com" }),
+					breadcrumb({ message: "two: john.smith@example.com" }),
+				],
+			}),
+		);
+		const trail = (result.payload as ErrorPayload).breadcrumbs;
+		expect(trail?.[0]?.message).toBe("one: [REDACTED]");
+		expect(trail?.[1]?.message).toBe("two: [REDACTED]");
+	});
+
+	it("applies custom rules to breadcrumbs the same way as the error message", () => {
+		const config: PrivacyConfig = {
+			customRules: [{ name: "acct", pattern: /ACC-\d{6}/g }],
+		};
+		const result = applyPrivacy(
+			errorEvent({
+				breadcrumbs: [breadcrumb({ message: "account ACC-123456 flagged" })],
+			}),
+			config,
+		);
+		expect((result.payload as ErrorPayload).breadcrumbs?.[0]?.message).toBe(
+			"account [REDACTED] flagged",
+		);
+	});
+
+	it("leaves an event with no breadcrumbs field untouched (undefined, not [])", () => {
+		const result = applyPrivacy(errorEvent());
+		expect((result.payload as ErrorPayload).breadcrumbs).toBeUndefined();
 	});
 });
 

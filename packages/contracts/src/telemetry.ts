@@ -7,10 +7,29 @@
 // Three event types now (error, network, performance) — a real
 // discriminated union instead of a single flat payload type, per Step
 // 4's own comment that this should happen "when a second event_type is
-// real." breadcrumb gets added the same way, alongside its
-// instrumentation module, not speculatively now.
+// real." breadcrumb is *not* a fourth event_type here, deliberately —
+// per the design confirmed with the user (PROGRESS.md's Post-MVP gap
+// closure section), breadcrumbs are a trail attached to an error's own
+// payload, not sent as their own standalone event.
 
 export type WireEventType = "error" | "network" | "performance";
+
+// instrumentation.md §Breadcrumbs' category vocabulary — mirrors
+// packages/sdk's BreadcrumbCategory exactly.
+export type WireBreadcrumbCategory =
+	| "navigation"
+	| "interaction"
+	| "network"
+	| "error"
+	| "performance"
+	| "custom";
+
+export interface WireBreadcrumb {
+	category: WireBreadcrumbCategory;
+	message: string;
+	timestamp: string;
+	data?: Record<string, unknown>;
+}
 
 export interface WireErrorPayload {
 	message: string;
@@ -20,6 +39,7 @@ export interface WireErrorPayload {
 	// SDK *can* provide a fingerprint hint, but doesn't build one yet.
 	fingerprint?: string;
 	handled: boolean;
+	breadcrumbs?: WireBreadcrumb[];
 }
 
 // instrumentation.md §Network: "captures safe metadata only" — never

@@ -1,14 +1,20 @@
+import { addBreadcrumb } from "./breadcrumbs";
 import {
 	captureException,
 	type InitOptions,
 	init as initClient,
 } from "./client";
 import { registerErrorInstrumentation } from "./errors";
+import { registerInteractionInstrumentation } from "./interactions";
+import { registerNavigationInstrumentation } from "./navigation";
 import { registerNetworkInstrumentation } from "./network";
 import { registerPerformanceInstrumentation } from "./performance";
 
 export type { InitOptions } from "./client";
 export { registerErrorInstrumentation } from "./errors";
+export type { Breadcrumb, BreadcrumbCategory } from "./event";
+export { registerInteractionInstrumentation } from "./interactions";
+export { registerNavigationInstrumentation } from "./navigation";
 export { registerNetworkInstrumentation } from "./network";
 export { registerPerformanceInstrumentation } from "./performance";
 // Public so a consuming app can actually name these types when building
@@ -16,7 +22,7 @@ export { registerPerformanceInstrumentation } from "./performance";
 // configured") — exported from client.ts's InitOptions type already, but
 // re-exported here directly too since that's the more discoverable name.
 export type { PrivacyConfig, PrivacyRule } from "./privacy";
-export { captureException };
+export { addBreadcrumb, captureException };
 
 // core-architecture.md lists "register instrumentation" as one of
 // init()'s own responsibilities — client.ts's init() never actually
@@ -41,6 +47,8 @@ export function init(options: InitOptions) {
 		registerErrorInstrumentation();
 		registerNetworkInstrumentation({ ignoreUrlPrefix: options.endpoint });
 		registerPerformanceInstrumentation();
+		registerNavigationInstrumentation();
+		registerInteractionInstrumentation();
 		instrumentationRegistered = true;
 	}
 

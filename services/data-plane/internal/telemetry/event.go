@@ -13,11 +13,13 @@ import (
 	"time"
 )
 
-// EventType is now a real three-member set — packages/sdk's performance
+// EventType is a real three-member set — packages/sdk's performance
 // instrumentation (Step 7) made "performance" real, matching this
 // package's own earlier note that said to extend this when that
-// happened. breadcrumb stays unadded until its instrumentation module
-// exists, same reasoning.
+// happened. breadcrumb deliberately does *not* become a fourth member
+// here — per the design confirmed with the user, breadcrumbs are a
+// trail attached to ErrorPayload (see the Breadcrumb type below), not
+// their own standalone event type.
 type EventType string
 
 const (
@@ -38,14 +40,28 @@ var (
 	ErrUnsupportedSchema = errors.New("unsupported schema_version")
 )
 
+// Breadcrumb mirrors packages/contracts' WireBreadcrumb — the trail
+// attached to an error's own payload (packages/sdk/src/breadcrumbs.ts),
+// not a standalone event type. Data is untyped JSON on purpose: it's a
+// developer-supplied bag via the SDK's addBreadcrumb(), already redacted
+// client-side (privacy.ts) before it ever reaches here — this struct
+// just needs to round-trip it, not interpret it.
+type Breadcrumb struct {
+	Category  string                 `json:"category"`
+	Message   string                 `json:"message"`
+	Timestamp string                 `json:"timestamp"`
+	Data      map[string]interface{} `json:"data,omitempty"`
+}
+
 // ErrorPayload mirrors packages/contracts' WireErrorPayload — same
 // wire contract (api-contracts.md §4), different language.
 type ErrorPayload struct {
-	Message       string `json:"message"`
-	ExceptionType string `json:"exception_type"`
-	StackTrace    string `json:"stack_trace,omitempty"`
-	Fingerprint   string `json:"fingerprint,omitempty"`
-	Handled       bool   `json:"handled"`
+	Message       string       `json:"message"`
+	ExceptionType string       `json:"exception_type"`
+	StackTrace    string       `json:"stack_trace,omitempty"`
+	Fingerprint   string       `json:"fingerprint,omitempty"`
+	Handled       bool         `json:"handled"`
+	Breadcrumbs   []Breadcrumb `json:"breadcrumbs,omitempty"`
 }
 
 // NetworkPayload mirrors packages/contracts' WireNetworkPayload.

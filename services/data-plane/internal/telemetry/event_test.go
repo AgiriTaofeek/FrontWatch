@@ -3,6 +3,7 @@ package telemetry
 import (
 	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -185,11 +186,48 @@ func TestEvent_JSONRoundTrip(t *testing.T) {
 		if got.NetworkPayload != nil {
 			t.Errorf("NetworkPayload = %+v, want nil", got.NetworkPayload)
 		}
-		if got.ErrorPayload == nil || *got.ErrorPayload != *want.ErrorPayload {
+		// reflect.DeepEqual, not !=/== — ErrorPayload gained a []Breadcrumb
+		// field, and a struct containing a slice is no longer comparable
+		// with Go's built-in equality operators at all (a compile error,
+		// not a runtime one — caught immediately by adding the field).
+		if got.ErrorPayload == nil || !reflect.DeepEqual(*got.ErrorPayload, *want.ErrorPayload) {
 			t.Errorf("ErrorPayload = %+v, want %+v", got.ErrorPayload, want.ErrorPayload)
 		}
 		if got.EventID != want.EventID || got.EventType != want.EventType {
 			t.Errorf("got = %+v, want %+v", got, want)
+		}
+	})
+
+	t.Run("error event with breadcrumbs", func(t *testing.T) {
+		// Breadcrumbs.ts's own trail: attached to ErrorPayload, not a
+		// standalone event — this is the shape that actually reaches
+		// ingestion once a customer's SDK has recorded any breadcrumbs
+		// before an error. Data is a real, non-empty map — nil/empty is
+		// already covered by validErrorEvent()'s plain case above.
+		want := validErrorEvent()
+		want.SchemaVersion = 1
+		want.ErrorPayload.Breadcrumbs = []Breadcrumb{
+			{Category: "navigation", Message: "Navigation -> /accounts", Timestamp: "2026-08-16T00:00:00.000Z"},
+			{
+				Category:  "custom",
+				Message:   "retry attempted",
+				Timestamp: "2026-08-16T00:00:01.000Z",
+				Data:      map[string]interface{}{"attempt": float64(2)},
+			},
+		}
+
+		data, err := json.Marshal(want)
+		if err != nil {
+			t.Fatalf("Marshal() = %v", err)
+		}
+
+		var got Event
+		if err := json.Unmarshal(data, &got); err != nil {
+			t.Fatalf("Unmarshal() = %v", err)
+		}
+
+		if got.ErrorPayload == nil || !reflect.DeepEqual(*got.ErrorPayload, *want.ErrorPayload) {
+			t.Errorf("ErrorPayload = %+v, want %+v", got.ErrorPayload, want.ErrorPayload)
 		}
 	})
 

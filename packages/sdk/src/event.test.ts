@@ -38,6 +38,29 @@ describe("createErrorEvent", () => {
 		);
 		expect(a.eventId).not.toBe(b.eventId);
 	});
+
+	it("carries an attached breadcrumb trail through untouched", () => {
+		const event = createErrorEvent(
+			{
+				message: "boom",
+				exceptionType: "TypeError",
+				handled: true,
+				breadcrumbs: [
+					{
+						category: "navigation",
+						message: "Navigation -> /accounts",
+						timestamp: "2026-08-16T00:00:00.000Z",
+					},
+				],
+			},
+			context,
+		);
+
+		if (event.eventType === "error") {
+			expect(event.payload.breadcrumbs).toHaveLength(1);
+			expect(event.payload.breadcrumbs?.[0]?.category).toBe("navigation");
+		}
+	});
 });
 
 describe("createNetworkEvent", () => {
