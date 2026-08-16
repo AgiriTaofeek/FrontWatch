@@ -43,6 +43,13 @@
 			"when": 1786787174265,
 			"tag": "0005_talented_tag",
 			"breakpoints": true
+		},
+		{
+			"idx": 6,
+			"version": "7",
+			"when": 1786919847043,
+			"tag": "0006_minor_carmella_unuscione",
+			"breakpoints": true
 		}
 	]
 }

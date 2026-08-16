@@ -1,7 +1,9 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
+import { createApplication } from "../db/applications";
 import { db } from "../db/client";
-import { alertRules, projects } from "../db/schema";
+import { createEnvironment } from "../db/environments";
+import { alertRules, applications, environments, projects } from "../db/schema";
 import {
 	cleanupTestPrincipal,
 	registerTestPrincipal,
@@ -9,6 +11,8 @@ import {
 } from "../testHelpers/auth";
 import { alertRulesRoutes } from "./alertRules";
 import { applicationHealthRoutes } from "./applicationHealth";
+import { applicationsRoutes } from "./applications";
+import { environmentsRoutes } from "./environments";
 import { issuesRoutes } from "./issues";
 import { navigationRoutes } from "./navigation";
 import { networkRoutes } from "./network";
@@ -34,6 +38,15 @@ import { sessionsRoutes } from "./sessions";
 const orgA = await registerTestPrincipal();
 const orgB = await registerTestPrincipal();
 const projectInOrgB = await seedTestProject(orgB.organizationId);
+const applicationInOrgB = await createApplication(
+	orgB.organizationId,
+	"App in org B",
+);
+const environmentInOrgB = await createEnvironment(
+	applicationInOrgB.id,
+	"Production",
+	"production",
+);
 
 const [ruleInOrgB] = await db
 	.insert(alertRules)
@@ -50,6 +63,12 @@ if (!ruleInOrgB) {
 afterAll(async () => {
 	await db.delete(alertRules).where(eq(alertRules.id, ruleInOrgB.id));
 	await db.delete(projects).where(eq(projects.id, projectInOrgB.id));
+	await db
+		.delete(environments)
+		.where(eq(environments.id, environmentInOrgB.id));
+	await db
+		.delete(applications)
+		.where(eq(applications.id, applicationInOrgB.id));
 	await cleanupTestPrincipal(orgA);
 	await cleanupTestPrincipal(orgB);
 });
@@ -62,6 +81,51 @@ describe("cross-organization access — org_A principal against org_B's resource
 			}),
 		);
 		expect(response.status).toBe(404);
+	});
+
+	it("GET /organizations/:organizationId/applications → 403 (own-org-only, no cross-tenant existence probe to guard)", async () => {
+		const response = await applicationsRoutes.handle(
+			new Request(
+				`http://localhost/organizations/${orgB.organizationId}/applications`,
+				{ headers: { Cookie: orgA.cookie } },
+			),
+		);
+		expect(response.status).toBe(403);
+	});
+
+	it("GET /applications/:applicationId → 404", async () => {
+		const response = await applicationsRoutes.handle(
+			new Request(`http://localhost/applications/${applicationInOrgB.id}`, {
+				headers: { Cookie: orgA.cookie },
+			}),
+		);
+		expect(response.status).toBe(404);
+	});
+
+	it("GET /environments/:environmentId → 404", async () => {
+		const response = await environmentsRoutes.handle(
+			new Request(`http://localhost/environments/${environmentInOrgB.id}`, {
+				headers: { Cookie: orgA.cookie },
+			}),
+		);
+		expect(response.status).toBe(404);
+	});
+
+	it("POST /projects claiming org B's applicationId → 422, not attached to another org's application", async () => {
+		const response = await projectsRoutes.handle(
+			new Request("http://localhost/projects", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					Cookie: orgA.cookie,
+				},
+				body: JSON.stringify({
+					organizationId: orgA.organizationId,
+					applicationId: applicationInOrgB.id,
+				}),
+			}),
+		);
+		expect(response.status).toBe(422);
 	});
 
 	it("GET /projects/:projectId/issues → 404", async () => {

@@ -9,7 +9,9 @@ import { healthRoutes } from "./lib/health";
 import { metricsPlugin } from "./lib/metrics";
 import { alertRulesRoutes } from "./routes/alertRules";
 import { applicationHealthRoutes } from "./routes/applicationHealth";
+import { applicationsRoutes } from "./routes/applications";
 import { authRoutes } from "./routes/auth";
+import { environmentsRoutes } from "./routes/environments";
 import { issuesRoutes } from "./routes/issues";
 import { navigationRoutes } from "./routes/navigation";
 import { networkRoutes } from "./routes/network";
@@ -27,6 +29,8 @@ import { sessionsRoutes } from "./routes/sessions";
 const api = new Elysia({ prefix: "/api/v1" })
 	.use(authPlugin())
 	.use(authRoutes)
+	.use(applicationsRoutes)
+	.use(environmentsRoutes)
 	.use(projectsRoutes)
 	.use(issuesRoutes)
 	.use(navigationRoutes)

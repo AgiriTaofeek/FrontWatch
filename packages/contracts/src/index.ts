@@ -17,10 +17,19 @@ export type {
 	TelemetryStatus,
 } from "./applicationHealth";
 export type {
+	ApplicationSummary,
+	ListApplicationsResponse,
+} from "./applications";
+export type {
 	AuthenticatedPrincipal,
 	MembershipRole,
 	OrganizationMembershipSummary,
 } from "./auth";
+export type {
+	EnvironmentSummary,
+	EnvironmentType,
+	ListEnvironmentsResponse,
+} from "./environments";
 export type {
 	IssueDetail,
 	IssueSummary,

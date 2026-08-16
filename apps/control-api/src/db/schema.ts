@@ -16,10 +16,18 @@ import {
 // sequential integer here would leak business metrics and make cross-tenant
 // enumeration attempts trivial.
 //
-// application_id / environment_id are nullable for now: the real model
-// (docs/05-architecture/data-model.md §1) has Project depend on Application
-// and Environment, but those tables don't exist yet (PROGRESS.md Step 2 —
-// deliberately deferred, not an oversight). No .references() until they do.
+// application_id / environment_id are now real FKs (Post-MVP gap
+// closure, PROGRESS.md — the real model in docs/05-architecture/
+// data-model.md §1 has Project depend on Application and Environment),
+// but deliberately still nullable — scope confirmed with the user
+// before building: making them required would be a breaking change
+// across every existing project-creation call site (control-api tests,
+// loadtest/, chaostest/, apps/demo, the self-hosted install docs), for
+// a real customer need ("multiple environments per application") that
+// doesn't exist yet pre-pilot. This closes "Application/Environment
+// aren't real tables" (Step 2's original deviation) without also
+// closing "a project must belong to one" — a deliberately separate,
+// larger decision, tracked, not conflated with this one.
 //
 // organizationId is NOT nullable, unlike those two — Step 9's RBAC-
 // enforcement slice needs a real tenant boundary to enforce against,
@@ -31,6 +39,73 @@ import {
 
 export const projectStatus = pgEnum("project_status", ["active", "disabled"]);
 
+// data-model.md §1: "Application | id, organization_id, name,
+// framework, status, created_at, updated_at". framework is free text
+// (not an enum) deliberately — mvp.md §5's Tier 1/2/3 framework list is
+// still growing (React today, Vue/Svelte/etc. later), and this column
+// is descriptive metadata for the dashboard, not something any query
+// branches on the way EventType/AlertRuleType do.
+export const applicationStatus = pgEnum("application_status", [
+	"active",
+	"disabled",
+]);
+
+export const applications = pgTable("applications", {
+	id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+
+	organizationId: uuid("organization_id")
+		.notNull()
+		.references(() => organizations.id),
+
+	name: text("name").notNull(),
+	framework: text("framework"),
+	status: applicationStatus("status").notNull().default("active"),
+
+	createdAt: timestamp("created_at", { withTimezone: true })
+		.notNull()
+		.defaultNow(),
+	updatedAt: timestamp("updated_at", { withTimezone: true })
+		.notNull()
+		.defaultNow(),
+});
+
+// data-model.md §1: "Environment | id, application_id, name, type,
+// status, created_at" — type: development/staging/production/custom,
+// its own literal list. No default: unlike alertRuleType's "new_issue"
+// (a genuine common-case default), silently defaulting an unspecified
+// environment to "production" would be actively dangerous if a caller
+// forgot to set it — the API requires an explicit choice instead
+// (routes/environments.ts's body schema has no optional here).
+export const environmentType = pgEnum("environment_type", [
+	"development",
+	"staging",
+	"production",
+	"custom",
+]);
+export const environmentStatus = pgEnum("environment_status", [
+	"active",
+	"disabled",
+]);
+
+export const environments = pgTable("environments", {
+	id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+
+	applicationId: uuid("application_id")
+		.notNull()
+		.references(() => applications.id),
+
+	name: text("name").notNull(),
+	type: environmentType("type").notNull(),
+	status: environmentStatus("status").notNull().default("active"),
+
+	createdAt: timestamp("created_at", { withTimezone: true })
+		.notNull()
+		.defaultNow(),
+	updatedAt: timestamp("updated_at", { withTimezone: true })
+		.notNull()
+		.defaultNow(),
+});
+
 export const projects = pgTable("projects", {
 	id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
 
@@ -38,8 +113,8 @@ export const projects = pgTable("projects", {
 		.notNull()
 		.references(() => organizations.id),
 
-	applicationId: uuid("application_id"),
-	environmentId: uuid("environment_id"),
+	applicationId: uuid("application_id").references(() => applications.id),
+	environmentId: uuid("environment_id").references(() => environments.id),
 
 	// The SDK/telemetry identity boundary (data-model.md §1). Not a secret in
 	// the confidentiality sense — it ships inside client-side JS by design,

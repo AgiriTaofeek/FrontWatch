@@ -1,5 +1,7 @@
 import { Elysia, t } from "elysia";
+import { getApplication } from "../db/applications";
 import { db } from "../db/client";
+import { getEnvironment } from "../db/environments";
 import { getProject } from "../db/projects";
 import { projects } from "../db/schema";
 import {
@@ -27,6 +29,38 @@ export const projectsRoutes = new Elysia({ prefix: "/projects" })
 			);
 			if (!auth.ok) {
 				return status(auth.status, { error: auth.error });
+			}
+
+			// Existence alone isn't enough here — a real FK constraint
+			// (Post-MVP gap closure, PROGRESS.md) already rejects a
+			// genuinely nonexistent applicationId/environmentId, but it
+			// can't catch a *valid* id that belongs to a different
+			// organization. Without this check, an engineer in org A could
+			// silently attach their new project to org B's application —
+			// a real tenant-isolation gap the FK constraint alone doesn't
+			// close.
+			if (body.applicationId) {
+				const application = await getApplication(body.applicationId);
+				if (
+					!application ||
+					application.organizationId !== body.organizationId
+				) {
+					return status(422, {
+						error: "applicationId does not belong to this organization",
+					});
+				}
+			}
+			if (body.environmentId) {
+				const environment = await getEnvironment(body.environmentId);
+				if (
+					!environment ||
+					!body.applicationId ||
+					environment.applicationId !== body.applicationId
+				) {
+					return status(422, {
+						error: "environmentId does not belong to the given applicationId",
+					});
+				}
 			}
 
 			const [project] = await db
