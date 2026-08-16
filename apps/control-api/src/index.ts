@@ -8,6 +8,7 @@ import { errorHandlingPlugin } from "./lib/errorHandling";
 import { healthRoutes } from "./lib/health";
 import { metricsPlugin } from "./lib/metrics";
 import { alertRulesRoutes } from "./routes/alertRules";
+import { applicationHealthRoutes } from "./routes/applicationHealth";
 import { authRoutes } from "./routes/auth";
 import { issuesRoutes } from "./routes/issues";
 import { networkRoutes } from "./routes/network";
@@ -31,7 +32,8 @@ const api = new Elysia({ prefix: "/api/v1" })
 	.use(sessionsRoutes)
 	.use(performanceRoutes)
 	.use(releasesRoutes)
-	.use(alertRulesRoutes);
+	.use(alertRulesRoutes)
+	.use(applicationHealthRoutes);
 
 // health/metrics are mounted on the *unprefixed* root instance, not
 // merged into `api` above — confirmed empirically that a plugin

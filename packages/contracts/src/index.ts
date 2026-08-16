@@ -10,6 +10,13 @@ export type {
 	ListAlertRulesResponse,
 } from "./alertRules";
 export type {
+	ApplicationHealth,
+	ApplicationHealthErrors,
+	ApplicationHealthLatestRelease,
+	ApplicationHealthNetwork,
+	TelemetryStatus,
+} from "./applicationHealth";
+export type {
 	AuthenticatedPrincipal,
 	MembershipRole,
 	OrganizationMembershipSummary,

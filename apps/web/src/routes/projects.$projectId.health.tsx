@@ -1,19 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { AlertRuleList } from "../features/alerts/AlertRuleList";
+import { HealthOverview } from "../features/health/HealthOverview";
 
-export const Route = createFileRoute("/projects/$projectId/alert-rules")({
-	component: AlertRulesPage,
+export const Route = createFileRoute("/projects/$projectId/health")({
+	component: HealthPage,
 });
 
-function AlertRulesPage() {
+function HealthPage() {
 	const { projectId } = Route.useParams();
 	return (
 		<div>
-			<h1>Alerts</h1>
 			<nav>
-				<Link to="/projects/$projectId/health" params={{ projectId }}>
-					Health
-				</Link>{" "}
 				<Link to="/projects/$projectId/issues" params={{ projectId }}>
 					Issues
 				</Link>{" "}
@@ -28,9 +24,12 @@ function AlertRulesPage() {
 				</Link>{" "}
 				<Link to="/projects/$projectId/releases" params={{ projectId }}>
 					Releases
+				</Link>{" "}
+				<Link to="/projects/$projectId/alert-rules" params={{ projectId }}>
+					Alerts
 				</Link>
 			</nav>
-			<AlertRuleList projectId={projectId} />
+			<HealthOverview projectId={projectId} />
 		</div>
 	);
 }

@@ -11,6 +11,9 @@ function ReleasesPage() {
 		<div>
 			<h1>Releases</h1>
 			<nav>
+				<Link to="/projects/$projectId/health" params={{ projectId }}>
+					Health
+				</Link>{" "}
 				<Link to="/projects/$projectId/issues" params={{ projectId }}>
 					Issues
 				</Link>{" "}
