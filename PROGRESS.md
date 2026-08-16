@@ -352,6 +352,7 @@ Found 2026-08-16 by re-reviewing `mvp.md` §4's actual MVP-capability list (not 
 - [ ] **Navigation as its own instrumentation** — only a passive `context.route` field exists; no distinct pageview/navigation event stream
 - [ ] **Applications/Environments as real entities** — Step 2's nullable-FK shortcut on `projects` never got resolved
 - [ ] **Framework adapters (Tier 1: React, React Router, TanStack Start)** — no adapter package exists at all; `apps/web`/`apps/demo` both import the SDK core directly
+- [ ] **CI flake: `apps/control-api`'s ClickHouse-backed tests intermittently time out at ~5000ms** — found while landing the privacy PR above, not caused by it (that PR never touches `apps/control-api`). A *different* test fails each time (`GET /issues/:issueId`, `listNetworkResources`, `getRecentMetricWindow`, `listPerformanceMetrics` seen across 4 consecutive reruns of one PR), always in the ClickHouse layer, always right at bun:test's default 5000ms per-test timeout — consistent with CI-runner resource contention or connection-pool exhaustion, not a correctness bug (Step 9's load testing measured real p95 query latency at 23-77ms, nowhere near 5s). Also confirmed on `main` itself, pre-existing this PR: 3 of the last 10 `main` CI runs (2026-08-15/16) failed the identical way. Not yet root-caused — a first thing to try would be raising the per-test timeout for ClickHouse-touching `db/*.test.ts` files specifically, since production latency doesn't remotely justify a 5s ceiling
 
 ---
 
