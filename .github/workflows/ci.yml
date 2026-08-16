@@ -114,9 +114,18 @@ jobs:
           go install -tags 'clickhouse' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.19.1
           migrate -database "clickhouse://localhost:9000?username=frontwatch&password=frontwatch_dev&database=frontwatch&x-multi-statement=true" \
             -path services/data-plane/migrations/clickhouse up
+      # --timeout above bun:test's 5000ms default: a real, reproducible
+      # flake (a different ClickHouse-backed test times out each run) was
+      # traced to this job's constrained CPU plus a shared, module-level
+      # ClickHouse client's connection pool — see db/clickhouse.ts's own
+      # comment for the primary fix (raising max_open_connections). This
+      # is the second, defense-in-depth half: real production p95 query
+      # latency is 23-77ms (Step 9's load testing), so a generous CI-only
+      # ceiling costs nothing and doesn't mask a genuine hang the way an
+      # unbounded timeout would.
       - name: Run control-api tests
         working-directory: apps/control-api
-        run: bun test
+        run: bun test --timeout=20000
       - name: Run sdk tests
         # Scoped deliberately — a single root-level `bun test` does not
         # reliably apply a nested package's bunfig.toml (confirmed
