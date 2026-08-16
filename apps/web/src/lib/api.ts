@@ -30,6 +30,17 @@ export async function apiFetch<T>(
 ): Promise<T> {
 	const response = await fetch(`${API_BASE_URL}/api/v1${path}`, {
 		method: options.method,
+		// Pilot readiness dry-run (Step 10, PROGRESS.md) found this
+		// missing entirely — without it, the browser never sends the
+		// fw_session cookie back to control-api on a cross-origin
+		// request (the dashboard and control-api run on different
+		// origins/ports even in this same local setup), so every
+		// protected route 401'd regardless of whether a login screen
+		// existed. control-api's own CORS config (lib/cors.ts) has to
+		// echo the specific origin (not "*") and set
+		// Access-Control-Allow-Credentials for this to actually work —
+		// the two changes only work together.
+		credentials: "include",
 		headers:
 			options.body !== undefined
 				? { "Content-Type": "application/json" }
@@ -40,8 +51,22 @@ export async function apiFetch<T>(
 	if (!response.ok) {
 		// ui-patterns.md §4: errors must be actionable, not a bare failure
 		// — callers get a real status code to distinguish "not found"
-		// from "server error" rather than one generic error state.
-		throw new ApiError(`Request to ${path} failed`, response.status);
+		// from "server error" rather than one generic error state. Also
+		// surfaces the server's own error message (e.g. "invalid email
+		// or password") when the response body has one, rather than
+		// always showing a generic "request failed" — real UX need,
+		// found while building the login form (Step 10).
+		let message = `Request to ${path} failed`;
+		try {
+			const body = (await response.json()) as { error?: string };
+			if (body?.error) {
+				message = body.error;
+			}
+		} catch {
+			// Response body wasn't JSON (or was empty) — keep the generic
+			// message rather than letting a parse error mask the real one.
+		}
+		throw new ApiError(message, response.status);
 	}
 
 	return response.json() as Promise<T>;

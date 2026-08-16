@@ -3,6 +3,7 @@ import { Elysia } from "elysia";
 import { clickhouse } from "./db/clickhouse";
 import { db } from "./db/client";
 import { authPlugin } from "./lib/authPlugin";
+import { corsPlugin } from "./lib/cors";
 import { errorHandlingPlugin } from "./lib/errorHandling";
 import { healthRoutes } from "./lib/health";
 import { metricsPlugin } from "./lib/metrics";
@@ -42,6 +43,7 @@ export const app = new Elysia()
 	// comment: onError only covers routes registered *after* it in
 	// this chain, so it must come before healthRoutes/api below.
 	.use(errorHandlingPlugin())
+	.use(corsPlugin())
 	.use(metricsPlugin())
 	.use(
 		healthRoutes({

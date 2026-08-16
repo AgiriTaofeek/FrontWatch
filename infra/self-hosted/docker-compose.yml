@@ -1,0 +1,179 @@
+# Deployment Profile B — "Small self-hosted: Single VM"
+# (docs/08-operations-release/infrastructure.md's own profile table).
+# Everything (infra dependencies AND the FrontWatch services
+# themselves) runs in one Docker Compose stack on one machine — the
+# real, buildable stand-in for a pilot customer's first installation
+# (Step 10, PROGRESS.md). infra/local/docker-compose.yml is a
+# different, narrower thing: dev-infra-only (Postgres/ClickHouse/
+# Redpanda), meant to run *alongside* `go run`/`bun --watch` on the
+# host, not a deployable product. This file is the product itself.
+#
+# Prerequisites: copy .env.example to .env and set WEB_ORIGIN /
+# VITE_API_BASE_URL to your real host's address before building — see
+# apps/web/Dockerfile's own comment on why VITE_API_BASE_URL has to be
+# a build-time value, and docs/08-operations-release/
+# self-hosted-installation.md for the full walkthrough.
+#
+# Build + run:
+#   docker compose -f infra/self-hosted/docker-compose.yml build
+#   docker compose -f infra/self-hosted/docker-compose.yml up -d
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: frontwatch
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-frontwatch_dev}
+      POSTGRES_DB: frontwatch
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U frontwatch"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    environment:
+      # See infra/local/docker-compose.yml's own comment: without
+      # these, the official image disables network access for the
+      # 'default' user entirely, and the unauthenticated /ping
+      # endpoint never catches it.
+      CLICKHOUSE_USER: frontwatch
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-frontwatch_dev}
+      CLICKHOUSE_DB: frontwatch
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redpanda:
+    image: redpandadata/redpanda:v24.2.7
+    command:
+      - redpanda
+      - start
+      - --mode=dev-container
+      - --smp=1
+      - --memory=1G
+      - --overprovisioned
+      - --node-id=0
+      # Every FrontWatch service is a container on this same Compose
+      # network now (unlike infra/local's profile, where the app
+      # binaries run on the host) — advertising "redpanda" internally
+      # is what they actually resolve. "external" stays for the
+      # operator's own host-side debugging (rpk, etc.), same dual-
+      # listener reasoning infra/local/docker-compose.yml documents.
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr=internal://redpanda:9092,external://localhost:19092
+    ports:
+      - "19092:19092"
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot init steps, not long-running services — apply schema
+  # migrations against a freshly created (empty) Postgres/ClickHouse
+  # before anything that depends on that schema starts. Neither
+  # migration mechanism runs automatically inside the app images
+  # themselves (drizzle-kit/golang-migrate are deliberately excluded
+  # from the lean runtime images) — this is the real answer to "how
+  # does a fresh install get its schema," not a manual step an
+  # operator has to remember.
+  postgres-migrate:
+    build:
+      context: ../..
+      dockerfile: apps/control-api/Dockerfile
+      target: migrate
+    environment:
+      DATABASE_URL: postgres://frontwatch:${POSTGRES_PASSWORD:-frontwatch_dev}@postgres:5432/frontwatch
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  clickhouse-migrate:
+    build:
+      context: ../../services/data-plane
+      dockerfile: migrations/clickhouse/Dockerfile
+    environment:
+      CLICKHOUSE_MIGRATE_DSN: clickhouse://clickhouse:9000?username=frontwatch&password=${CLICKHOUSE_PASSWORD:-frontwatch_dev}&database=frontwatch&x-multi-statement=true
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+
+  control-api:
+    build:
+      context: ../..
+      dockerfile: apps/control-api/Dockerfile
+    environment:
+      DATABASE_URL: postgres://frontwatch:${POSTGRES_PASSWORD:-frontwatch_dev}@postgres:5432/frontwatch
+      CLICKHOUSE_HTTP_ADDR: clickhouse:8123
+      CLICKHOUSE_USERNAME: frontwatch
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-frontwatch_dev}
+      CLICKHOUSE_DATABASE: frontwatch
+      # Comma-separated allowlist (lib/cors.ts) — the dashboard's real,
+      # operator-facing origin, never "*" (credentialed cross-origin
+      # requests forbid a wildcard by spec anyway).
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3001}
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres-migrate:
+        condition: service_completed_successfully
+      clickhouse:
+        condition: service_healthy
+
+  ingestion:
+    build:
+      context: ../../services/data-plane
+      dockerfile: cmd/ingestion/Dockerfile
+    environment:
+      DATABASE_URL: postgres://frontwatch:${POSTGRES_PASSWORD:-frontwatch_dev}@postgres:5432/frontwatch
+      REDPANDA_BROKERS: redpanda:9092
+      PORT: "8080"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres-migrate:
+        condition: service_completed_successfully
+      redpanda:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ../../services/data-plane
+      dockerfile: cmd/worker/Dockerfile
+    environment:
+      CLICKHOUSE_ADDR: clickhouse:9000
+      CLICKHOUSE_DATABASE: frontwatch
+      CLICKHOUSE_USERNAME: frontwatch
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-frontwatch_dev}
+      REDPANDA_BROKERS: redpanda:9092
+    depends_on:
+      clickhouse-migrate:
+        condition: service_completed_successfully
+      redpanda:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+      args:
+        # Build-time only — see apps/web/Dockerfile's own comment.
+        # Must be the address a real browser (not another container)
+        # can reach control-api at, e.g. http://your-host:3000.
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:3000}
+    ports:
+      - "3001:3001"
+    depends_on:
+      - control-api
+
+volumes:
+  postgres_data:
+  clickhouse_data:

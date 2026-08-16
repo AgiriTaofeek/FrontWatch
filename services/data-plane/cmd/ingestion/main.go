@@ -63,7 +63,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:    ":" + cfg.Port,
-		Handler: mux,
+		Handler: corsMiddleware(mux),
 		// Real chaos testing (Failure recovery, PROGRESS.md's Step 9
 		// entry) found this server previously had no timeouts at all —
 		// a killed Redpanda left a real request hanging past a
@@ -99,6 +99,38 @@ func main() {
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Printf("graceful shutdown failed: %v", err)
 	}
+}
+
+// corsMiddleware — found missing entirely during Step 10's pilot
+// readiness dry-run: the browser SDK (packages/sdk) had never actually
+// been exercised against a real CORS-enforcing fetch before that dry
+// run (every earlier test in this repo drove it from a server-side
+// Bun/Go test runner or curl, none of which enforce CORS the way a
+// real browser does). Without this, a real web page loading the SDK
+// could never successfully deliver telemetry — the preflight OPTIONS
+// request 405'd (no route for it) and the browser blocked the actual
+// POST before it ever reached ingestHandler.
+//
+// Allow-Origin: "*", not an allowlist — unlike control-api (session
+// cookies, credentialed, must echo a specific origin), ingestion
+// authenticates via a bearer public key in the request body/header,
+// never a cookie, so there's no credentialed-request restriction
+// forcing a specific origin. A public key is meant to be embedded in
+// a customer's own public-facing web page, the same way a Sentry/
+// analytics ingest endpoint accepts requests from any origin that
+// holds a valid project key — restricting by origin here would break
+// the SDK's actual use case, not secure it.
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 type ingestResponsePayload struct {
