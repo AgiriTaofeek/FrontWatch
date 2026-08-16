@@ -51,7 +51,9 @@ export function PerformanceList({ projectId }: { projectId: string }) {
 // CLS is a unitless score (e.g. 0.05), not a duration — the other four
 // Core Web Vitals (FCP/INP/LCP/TTFB) are all milliseconds. Formatting
 // CLS as "0ms" would be actively misleading, not just imprecise.
-function formatValue(
+// Exported — features/health/HealthOverview.tsx's compact performance
+// summary reuses this rather than a second copy of the same rule.
+export function formatValue(
 	metricName: PerformanceMetricSummary["metricName"],
 	value: number,
 ): string {
@@ -61,6 +63,6 @@ function formatValue(
 	return `${Math.round(value)}ms`;
 }
 
-function formatPercent(rate: number): string {
+export function formatPercent(rate: number): string {
 	return `${(rate * 100).toFixed(1)}%`;
 }

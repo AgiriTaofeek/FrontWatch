@@ -116,10 +116,10 @@ function AuthenticatedLanding({
 					key <code>{createProjectMutation.data.publicKey}</code> (this is what
 					the SDK's <code>publicKey</code> option needs).{" "}
 					<Link
-						to="/projects/$projectId/issues"
+						to="/projects/$projectId/health"
 						params={{ projectId: createProjectMutation.data.id }}
 					>
-						View issues
+						View health
 					</Link>
 				</p>
 			)}
@@ -129,7 +129,7 @@ function AuthenticatedLanding({
 				onSubmit={(event) => {
 					event.preventDefault();
 					navigate({
-						to: "/projects/$projectId/issues",
+						to: "/projects/$projectId/health",
 						params: { projectId: projectIdInput },
 					});
 				}}
@@ -139,7 +139,7 @@ function AuthenticatedLanding({
 					value={projectIdInput}
 					onChange={(event) => setProjectIdInput(event.target.value)}
 				/>
-				<button type="submit">View issues</button>
+				<button type="submit">View health</button>
 			</form>
 		</div>
 	);

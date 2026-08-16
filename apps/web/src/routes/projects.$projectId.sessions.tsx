@@ -11,6 +11,9 @@ function SessionsPage() {
 		<div>
 			<h1>Sessions</h1>
 			<nav>
+				<Link to="/projects/$projectId/health" params={{ projectId }}>
+					Health
+				</Link>{" "}
 				<Link to="/projects/$projectId/issues" params={{ projectId }}>
 					Issues
 				</Link>{" "}
