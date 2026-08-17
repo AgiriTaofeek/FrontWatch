@@ -126,8 +126,39 @@ describe("applyPrivacy — built-in rules", () => {
 		const result = applyPrivacy(
 			errorEvent({ message: 'login body: {"password":"hunter2"}' }),
 		);
+		// The quoted-value alternative consumes the value's closing quote
+		// as part of the match (needed so it can also match a value with
+		// spaces inside the quotes — see the regression test below) — one
+		// real, cosmetic side effect: no trailing quote before the closing
+		// brace, unlike the old single-word-only pattern.
 		expect((result.payload as ErrorPayload).message).toBe(
-			'login body: {"password=[REDACTED]"}',
+			'login body: {"password=[REDACTED]}',
+		);
+	});
+
+	it("redacts a multi-word secret value in full, not just up to the first space", () => {
+		// Regression test for a real, previously-shipped bug (code review,
+		// 2026-08-17): the old pattern's value class stopped at the first
+		// whitespace, so "password=hunter two failed for user" redacted
+		// only "hunter" and shipped " two failed for user" unredacted.
+		const result = applyPrivacy(
+			errorEvent({
+				message: "login attempt: password=hunter two failed for user",
+			}),
+		);
+		const message = (result.payload as ErrorPayload).message;
+		expect(message).not.toContain("hunter");
+		expect(message).not.toContain("two");
+	});
+
+	it("redacts a quoted multi-word secret value, keeping the surrounding JSON-ish text intact", () => {
+		const result = applyPrivacy(
+			errorEvent({
+				message: 'request body: {"password":"hunter two words","ok":true}',
+			}),
+		);
+		expect((result.payload as ErrorPayload).message).toBe(
+			'request body: {"password=[REDACTED],"ok":true}',
 		);
 	});
 
@@ -266,6 +297,72 @@ describe("applyPrivacy — breadcrumbs", () => {
 			attempt: 2,
 			retryable: true,
 		});
+	});
+
+	it("redacts string values nested inside a breadcrumb data object, not just top-level ones", () => {
+		// Regression test for a real, previously-shipped bug (code review,
+		// 2026-08-17): addBreadcrumb is the one manual, developer-facing
+		// API this SDK has, its `data` argument is a fully open
+		// Record<string, unknown>, and only top-level string values were
+		// ever redacted — a real caller passing a nested object (e.g. the
+		// user object a real app already has in scope) shipped it
+		// completely unredacted.
+		const result = applyPrivacy(
+			errorEvent({
+				breadcrumbs: [
+					breadcrumb({
+						data: {
+							user: { email: "jane.doe@example.com", id: 42 },
+						},
+					}),
+				],
+			}),
+		);
+		expect((result.payload as ErrorPayload).breadcrumbs?.[0]?.data).toEqual({
+			user: { email: "[REDACTED]", id: 42 },
+		});
+	});
+
+	it("redacts string values nested inside an array in a breadcrumb data object", () => {
+		const result = applyPrivacy(
+			errorEvent({
+				breadcrumbs: [
+					breadcrumb({
+						data: {
+							recipients: ["jane.doe@example.com", "not-an-email", 7],
+						},
+					}),
+				],
+			}),
+		);
+		expect((result.payload as ErrorPayload).breadcrumbs?.[0]?.data).toEqual({
+			recipients: ["[REDACTED]", "not-an-email", 7],
+		});
+	});
+
+	it("fails closed on a data structure past the recursion depth limit, instead of descending forever", () => {
+		// A pathologically deep or circular structure passed to the open
+		// addBreadcrumb() API must never be able to hang the host page or
+		// blow the call stack — same "SDK failures must never crash the
+		// application" guarantee this SDK makes everywhere else. Built
+		// deep enough to exceed the real limit, not assumed from reading
+		// the constant alone.
+		let deep: Record<string, unknown> = { email: "jane.doe@example.com" };
+		for (let i = 0; i < 10; i++) {
+			deep = { nested: deep };
+		}
+
+		const result = applyPrivacy(
+			errorEvent({ breadcrumbs: [breadcrumb({ data: deep })] }),
+		);
+
+		expect(() => JSON.stringify(result)).not.toThrow();
+		// The subtree past the depth limit is replaced wholesale rather
+		// than left unredacted or descended into further.
+		const json = JSON.stringify(
+			(result.payload as ErrorPayload).breadcrumbs?.[0]?.data,
+		);
+		expect(json).not.toContain("jane.doe@example.com");
 	});
 
 	it("redacts every breadcrumb in the trail, not just the first", () => {
