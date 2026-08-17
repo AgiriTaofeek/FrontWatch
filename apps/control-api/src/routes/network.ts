@@ -26,7 +26,7 @@ export const networkRoutes = new Elysia().use(authPlugin()).get(
 			release: query.release,
 			route: query.route,
 			...parseClickHouseTimeRangeQuery(query),
-			limit: query.limit ? Number(query.limit) : undefined,
+			limit: query.limit,
 		});
 		return { resources };
 	},
@@ -37,7 +37,11 @@ export const networkRoutes = new Elysia().use(authPlugin()).get(
 			route: t.Optional(t.String()),
 			from: t.Optional(t.String()),
 			to: t.Optional(t.String()),
-			limit: t.Optional(t.String()),
+			// t.Number, not t.String — see issues.ts's identical comment for
+			// why (Elysia's own coercion rejects a non-numeric limit with a
+			// clean 422 instead of a NaN that later throws inside
+			// ClickHouse's UInt32 binding).
+			limit: t.Optional(t.Number({ minimum: 1 })),
 		}),
 	},
 );

@@ -21,7 +21,7 @@ export const sessionsRoutes = new Elysia()
 
 			const sessions = await listSessions(params.projectId, {
 				...parseClickHouseTimeRangeQuery(query),
-				limit: query.limit ? Number(query.limit) : undefined,
+				limit: query.limit,
 			});
 			return { sessions };
 		},
@@ -30,7 +30,8 @@ export const sessionsRoutes = new Elysia()
 			query: t.Object({
 				from: t.Optional(t.String()),
 				to: t.Optional(t.String()),
-				limit: t.Optional(t.String()),
+				// t.Number, not t.String — see issues.ts's identical comment.
+				limit: t.Optional(t.Number({ minimum: 1 })),
 			}),
 		},
 	)
