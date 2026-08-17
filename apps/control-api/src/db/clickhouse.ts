@@ -31,6 +31,30 @@ export const clickhouse = createClient({
 	// well above the current suite's real concurrency needs — cheap
 	// insurance, not a magic number tuned to the exact failure.
 	max_open_connections: 50,
+	// Residual flake found after the pool-size fix above: PR #47/#49/#50
+	// each hit this CI job's ClickHouse tests failing at the *full*
+	// 20000ms bun:test timeout, not queueing (which would show up
+	// faster, and scattered across different concurrency levels) - a
+	// real hang. @clickhouse/client's own troubleshooting docs name the
+	// exact mechanism: Keep-Alive reuses idle sockets, the server closes
+	// ones idle past its own timeout, and the client can be unaware and
+	// try to reuse a now-dead socket - normally caught by the client's
+	// own idle_socket_ttl timer firing first, but that timer can fire
+	// late "on CPU-starved machines," which a shared CI runner running
+	// Postgres + ClickHouse + this whole test suite concurrently
+	// genuinely is. eagerly_destroy_stale_sockets is the client's own
+	// documented mitigation for exactly this case - not verified to be
+	// the sole cause (a CI-only, load-dependent hang is inherently hard
+	// to reproduce and confirm locally), but the only concrete,
+	// documented mechanism that actually matches this symptom.
+	keep_alive: {
+		eagerly_destroy_stale_sockets: true,
+	},
+	// Defense in depth, not the primary fix: if something does still
+	// hang, fail with a clear ClickHouse-client-level error well before
+	// CI's 20000ms bun:test timeout, instead of a vague test-runner
+	// timeout with no information about which layer actually stalled.
+	request_timeout: 15000,
 });
 
 // DateTime64(3) query parameters — not just JSONEachRow inserts, the
