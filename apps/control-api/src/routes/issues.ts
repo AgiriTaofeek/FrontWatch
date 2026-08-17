@@ -36,8 +36,17 @@ export const issuesRoutes = new Elysia()
 			query: t.Object({
 				release: t.Optional(t.String()),
 				route: t.Optional(t.String()),
-				from: t.Optional(t.String()),
-				to: t.Optional(t.String()),
+				// format: "date-time" — same reasoning as `limit` below: a
+				// malformed from/to used to be silently dropped by
+				// parseClickHouseTimeRangeQuery (a real, previously-shipped
+				// behavior change flagged in code review) instead of telling
+				// the caller their request was malformed. Rejected with a
+				// clean 422 before the handler runs now; the string still
+				// flows through parseClickHouseTimeRangeQuery unchanged
+				// (kept as defensive-in-depth, not load-bearing for a
+				// request that reaches this schema).
+				from: t.Optional(t.String({ format: "date-time" })),
+				to: t.Optional(t.String({ format: "date-time" })),
 				// t.Number, not t.String — Elysia 1.1+ coerces t.Number for
 				// query schemas automatically. A non-numeric limit ("abc")
 				// used to become NaN (Number("abc")), which db/issues.ts's

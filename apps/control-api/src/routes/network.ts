@@ -35,8 +35,9 @@ export const networkRoutes = new Elysia().use(authPlugin()).get(
 		query: t.Object({
 			release: t.Optional(t.String()),
 			route: t.Optional(t.String()),
-			from: t.Optional(t.String()),
-			to: t.Optional(t.String()),
+			// format: "date-time" — see issues.ts's identical comment.
+			from: t.Optional(t.String({ format: "date-time" })),
+			to: t.Optional(t.String({ format: "date-time" })),
 			// t.Number, not t.String — see issues.ts's identical comment for
 			// why (Elysia's own coercion rejects a non-numeric limit with a
 			// clean 422 instead of a NaN that later throws inside

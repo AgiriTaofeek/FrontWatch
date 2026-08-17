@@ -28,8 +28,9 @@ export const navigationRoutes = new Elysia().use(authPlugin()).get(
 		params: t.Object({ projectId: t.String({ format: "uuid" }) }),
 		query: t.Object({
 			release: t.Optional(t.String()),
-			from: t.Optional(t.String()),
-			to: t.Optional(t.String()),
+			// format: "date-time" — see issues.ts's identical comment.
+			from: t.Optional(t.String({ format: "date-time" })),
+			to: t.Optional(t.String({ format: "date-time" })),
 			// t.Number, not t.String — see issues.ts's identical comment.
 			limit: t.Optional(t.Number({ minimum: 1 })),
 		}),

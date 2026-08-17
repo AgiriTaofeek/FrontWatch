@@ -90,6 +90,16 @@ describe("GET /projects/:projectId/performance", () => {
 		await db.delete(projects).where(eq(projects.id, otherProject.id));
 	});
 
+	it("rejects a malformed from with a clean 422, instead of silently ignoring the filter", async () => {
+		const response = await performanceRoutes.handle(
+			new Request(
+				`http://localhost/projects/${projectId}/performance?from=not-a-real-date`,
+				{ headers: { Cookie: principal.cookie } },
+			),
+		);
+		expect(response.status).toBe(422);
+	});
+
 	it("returns 401 without a session", async () => {
 		const response = await performanceRoutes.handle(
 			new Request(`http://localhost/projects/${projectId}/performance`),

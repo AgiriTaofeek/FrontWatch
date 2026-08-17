@@ -7,7 +7,7 @@ import {
 	createRouter,
 	RouterProvider,
 } from "@tanstack/react-router";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { applicationHealthQueryOptions } from "./api";
 import { HealthOverview } from "./HealthOverview";
 
@@ -16,8 +16,12 @@ import { HealthOverview } from "./HealthOverview";
 // release), which throw without real router context.
 function renderWithHealth(projectId: string, health: ApplicationHealth) {
 	const queryClient = new QueryClient();
+	// Must match HealthOverview's own default window (60 minutes) — the
+	// query key includes windowMinutes now, same "seed under the exact
+	// key the component will actually use" reasoning every other list
+	// component's test already follows.
 	queryClient.setQueryData(
-		applicationHealthQueryOptions(projectId).queryKey,
+		applicationHealthQueryOptions(projectId, 60).queryKey,
 		health,
 	);
 
@@ -143,5 +147,62 @@ describe("HealthOverview — latest release", () => {
 
 		const link = await screen.findByText("View release health");
 		expect(link.getAttribute("href")).toBe("/releases/proj_1%3A4.2.0");
+	});
+});
+
+describe("HealthOverview — window selector", () => {
+	it("re-fetches with the new window when the selector changes (regression: this control didn't exist at all before)", async () => {
+		// Code review finding 6: the backend's own windowMinutes filter was
+		// never reachable from the UI. Seeds two different windows' worth
+		// of data under their real query keys and confirms changing the
+		// selector actually renders the second window's data, not just
+		// that the control exists.
+		const projectId = "proj_1";
+		const queryClient = new QueryClient();
+		queryClient.setQueryData(
+			applicationHealthQueryOptions(projectId, 60).queryKey,
+			{
+				telemetryStatus: "healthy",
+				windowMinutes: 60,
+				lastEventAt: "2026-08-16 09:00:00.000",
+				errors: { count: 3, previousWindowCount: 1, issueCount: 2 },
+				network: { requestCount: 10, failureCount: 2, failureRate: 0.2 },
+				performanceMetrics: [],
+				latestRelease: null,
+			} satisfies ApplicationHealth,
+		);
+		queryClient.setQueryData(
+			applicationHealthQueryOptions(projectId, 1440).queryKey,
+			{
+				telemetryStatus: "healthy",
+				windowMinutes: 1440,
+				lastEventAt: "2026-08-16 09:00:00.000",
+				errors: { count: 99, previousWindowCount: 10, issueCount: 5 },
+				network: { requestCount: 500, failureCount: 5, failureRate: 0.01 },
+				performanceMetrics: [],
+				latestRelease: null,
+			} satisfies ApplicationHealth,
+		);
+
+		const rootRoute = createRootRoute({
+			component: () => (
+				<QueryClientProvider client={queryClient}>
+					<HealthOverview projectId={projectId} />
+				</QueryClientProvider>
+			),
+		});
+		const router = createRouter({
+			routeTree: rootRoute,
+			history: createMemoryHistory({ initialEntries: ["/"] }),
+		});
+		render(<RouterProvider router={router} />);
+
+		expect(await screen.findByText("3")).toBeTruthy(); // 60-minute error count
+
+		fireEvent.change(screen.getByLabelText("Window"), {
+			target: { value: "1440" },
+		});
+
+		expect(await screen.findByText("99")).toBeTruthy(); // 24-hour error count
 	});
 });

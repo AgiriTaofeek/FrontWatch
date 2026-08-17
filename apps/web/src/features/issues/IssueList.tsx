@@ -5,6 +5,7 @@ import {
 	DEFAULT_FILTER_BAR_VALUE,
 	FilterBar,
 	type FilterBarValue,
+	isFilterActive,
 } from "../../components/FilterBar";
 import { issuesQueryOptions } from "./api";
 
@@ -18,7 +19,11 @@ export function IssueList({ projectId }: { projectId: string }) {
 		<div>
 			<FilterBar value={filters} onChange={setFilters} />
 			{data.issues.length === 0 ? (
-				<p>No issues found for this project.</p>
+				<p>
+					{isFilterActive(filters)
+						? "No issues match the selected filters."
+						: "No issues found for this project."}
+				</p>
 			) : (
 				<table>
 					<thead>

@@ -7,7 +7,7 @@ import {
 	createRouter,
 	RouterProvider,
 } from "@tanstack/react-router";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { DEFAULT_FILTER_BAR_VALUE } from "../../components/FilterBar";
 import { issuesQueryOptions } from "./api";
 import { IssueList } from "./IssueList";
@@ -53,6 +53,51 @@ describe("IssueList", () => {
 		renderWithIssues("proj_1", { issues: [] });
 
 		expect(await screen.findByText(/no issues found/i)).toBeTruthy();
+	});
+
+	it("shows a different empty-state message once a filter is active, not the same 'no issues ever' text", async () => {
+		// Regression test for code review finding 7: a deleted comment on
+		// this component had explicitly flagged that the two empty states
+		// ("no data ever" vs. "no data for this filter") were the same
+		// message, deferred until filter UI existed — it now does.
+		const projectId = "proj_1";
+		const queryClient = new QueryClient();
+		queryClient.setQueryData(
+			issuesQueryOptions(projectId, DEFAULT_FILTER_BAR_VALUE).queryKey,
+			{ issues: [] } satisfies ListIssuesResponse,
+		);
+		queryClient.setQueryData(
+			issuesQueryOptions(projectId, {
+				...DEFAULT_FILTER_BAR_VALUE,
+				preset: "24h",
+			}).queryKey,
+			{ issues: [] } satisfies ListIssuesResponse,
+		);
+
+		const rootRoute = createRootRoute({
+			component: () => (
+				<QueryClientProvider client={queryClient}>
+					<IssueList projectId={projectId} />
+				</QueryClientProvider>
+			),
+		});
+		const router = createRouter({
+			routeTree: rootRoute,
+			history: createMemoryHistory({ initialEntries: ["/"] }),
+		});
+		render(<RouterProvider router={router} />);
+
+		expect(
+			await screen.findByText(/no issues found for this project/i),
+		).toBeTruthy();
+
+		fireEvent.change(screen.getByLabelText("Time range"), {
+			target: { value: "24h" },
+		});
+
+		expect(
+			await screen.findByText(/no issues match the selected filters/i),
+		).toBeTruthy();
 	});
 
 	it("renders a row per issue with its key fields", async () => {

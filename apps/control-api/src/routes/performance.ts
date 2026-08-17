@@ -32,8 +32,9 @@ export const performanceRoutes = new Elysia().use(authPlugin()).get(
 		query: t.Object({
 			release: t.Optional(t.String()),
 			route: t.Optional(t.String()),
-			from: t.Optional(t.String()),
-			to: t.Optional(t.String()),
+			// format: "date-time" — see issues.ts's identical comment.
+			from: t.Optional(t.String({ format: "date-time" })),
+			to: t.Optional(t.String({ format: "date-time" })),
 		}),
 	},
 );

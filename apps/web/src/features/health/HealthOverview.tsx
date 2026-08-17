@@ -1,7 +1,21 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 import { formatPercent, formatValue } from "../performance/PerformanceList";
 import { applicationHealthQueryOptions } from "./api";
+
+// A duration back from now, not an absolute range — a different shape
+// from FilterBar's from/to presets (code review finding 6), so this is
+// its own small, dedicated set rather than reusing FilterBar. 60
+// matches db/applicationHealth.ts's own DEFAULT_WINDOW_MINUTES.
+const WINDOW_PRESETS: { minutes: number; label: string }[] = [
+	{ minutes: 5, label: "Last 5 minutes" },
+	{ minutes: 30, label: "Last 30 minutes" },
+	{ minutes: 60, label: "Last hour" },
+	{ minutes: 1440, label: "Last 24 hours" },
+	{ minutes: 10080, label: "Last 7 days" },
+];
+const DEFAULT_WINDOW_MINUTES = 60;
 
 // health-monitoring.md's own "critical distinction the system must
 // never blur": Healthy vs. No telemetry vs. Telemetry stale render as
@@ -9,11 +23,27 @@ import { applicationHealthQueryOptions } from "./api";
 // different label — a lack of data must never look like "0 errors,
 // all clear."
 export function HealthOverview({ projectId }: { projectId: string }) {
-	const { data } = useSuspenseQuery(applicationHealthQueryOptions(projectId));
+	const [windowMinutes, setWindowMinutes] = useState(DEFAULT_WINDOW_MINUTES);
+	const { data } = useSuspenseQuery(
+		applicationHealthQueryOptions(projectId, windowMinutes),
+	);
 
 	return (
 		<div>
 			<h1>Application Health</h1>
+			<label>
+				Window{" "}
+				<select
+					value={windowMinutes}
+					onChange={(event) => setWindowMinutes(Number(event.target.value))}
+				>
+					{WINDOW_PRESETS.map((preset) => (
+						<option key={preset.minutes} value={preset.minutes}>
+							{preset.label}
+						</option>
+					))}
+				</select>
+			</label>
 			<p>Window: last {data.windowMinutes} minutes</p>
 
 			{data.telemetryStatus === "no_telemetry" && (
