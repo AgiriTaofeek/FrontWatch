@@ -1,3 +1,20 @@
+import { createIsomorphicFn } from "@tanstack/react-start";
+import { getRequestHeader } from "@tanstack/react-start/server";
+
+// TanStack Start's bundler flags a plain `typeof window` check here as
+// unsafe (its own "import-protection" plugin) — importing
+// "@tanstack/react-start/server" at all from a file also reachable from
+// client code risks pulling server-only code into the client bundle,
+// even if the *call* is correctly guarded. createIsomorphicFn is the
+// framework's own sanctioned way to do exactly this: the bundler knows
+// to strip the .server() branch from the client bundle entirely, not
+// just skip calling it at runtime. Confirmed the naive version actually
+// gets flagged, not just theoretically risky — a real build/dev-time
+// error, not a lint suggestion.
+const getForwardedCookie = createIsomorphicFn()
+	.server(() => getRequestHeader("cookie"))
+	.client(() => undefined);
+
 // Thin fetch wrapper — every feature's query layer goes through this,
 // not raw fetch() scattered around. Vite only exposes env vars to the
 // client bundle when prefixed VITE_.
@@ -28,6 +45,20 @@ export async function apiFetch<T>(
 	path: string,
 	options: ApiFetchOptions = {},
 ): Promise<T> {
+	// `credentials: "include"` (below) only ever does anything for a
+	// fetch a real browser's cookie jar issues — it's a no-op on the
+	// server-side fetch that runs during SSR, which has no cookie jar of
+	// its own at all. Found via HealthOverview's own end-to-end check
+	// (PROGRESS.md): every protected page's SSR render threw "not
+	// authenticated" under a raw `curl` replay of the session cookie and
+	// silently fell back to client-only rendering — a real, working
+	// resilience path, but one that meant every protected page's SSR was
+	// pure dead weight in practice, working only by accident once a real
+	// browser's own client-side fetch (which does attach cookies) took
+	// over. Fixed by explicitly forwarding the *incoming* request's own
+	// Cookie header on the outgoing server-side fetch.
+	const forwardedCookie = getForwardedCookie();
+
 	const response = await fetch(`${API_BASE_URL}/api/v1${path}`, {
 		method: options.method,
 		// Pilot readiness dry-run (Step 10, PROGRESS.md) found this
@@ -41,10 +72,12 @@ export async function apiFetch<T>(
 		// Access-Control-Allow-Credentials for this to actually work —
 		// the two changes only work together.
 		credentials: "include",
-		headers:
-			options.body !== undefined
+		headers: {
+			...(options.body !== undefined
 				? { "Content-Type": "application/json" }
-				: undefined,
+				: {}),
+			...(forwardedCookie ? { Cookie: forwardedCookie } : {}),
+		},
 		body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
 	});
 
