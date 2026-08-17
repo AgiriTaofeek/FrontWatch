@@ -15,6 +15,24 @@ import {
 import { applyPrivacy, type PrivacyConfig } from "./privacy";
 import { Transport } from "./transport";
 
+// US-16.02: "telemetry categories can be enabled/disabled where
+// supported, disabled telemetry is not transmitted." Every key defaults
+// to true — an app that doesn't set `capture` at all keeps today's
+// existing behavior exactly. index.ts's init() is what actually reads
+// this (it owns instrumentation registration); it isn't consulted here
+// in client.ts at all, deliberately: a *disabled* category means its
+// register*Instrumentation() function is never called in the first
+// place, so no event of that type can be constructed to disable-check
+// against later — "disabled telemetry is not transmitted" is satisfied
+// by never capturing it, not by capturing then discarding it.
+export interface CaptureConfig {
+	errors?: boolean;
+	network?: boolean;
+	performance?: boolean;
+	navigation?: boolean;
+	interactions?: boolean;
+}
+
 export interface InitOptions extends SdkConfig {
 	publicKey: string;
 	endpoint: string;
@@ -24,6 +42,7 @@ export interface InitOptions extends SdkConfig {
 	// aren't config options yet (nothing captures DOM text/inputs/headers
 	// for them to gate today).
 	privacy?: PrivacyConfig;
+	capture?: CaptureConfig;
 }
 
 export class Client {

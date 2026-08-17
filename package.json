@@ -18,6 +18,7 @@
 		"restore:postgres": "./scripts/restore-postgres.sh",
 		"verify:postgres-backup": "./scripts/verify-postgres-backup.sh",
 		"dr:exercise": "./scripts/dr-exercise.sh",
+		"set-retention:clickhouse": "./scripts/set-clickhouse-retention.sh",
 		"loadtest": "./loadtest/run.sh",
 		"chaostest": "./chaostest/run-all.sh"
 	}

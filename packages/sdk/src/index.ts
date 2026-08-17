@@ -1,5 +1,6 @@
 import { addBreadcrumb } from "./breadcrumbs";
 import {
+	type CaptureConfig,
 	captureException,
 	type InitOptions,
 	init as initClient,
@@ -10,7 +11,7 @@ import { registerNavigationInstrumentation } from "./navigation";
 import { registerNetworkInstrumentation } from "./network";
 import { registerPerformanceInstrumentation } from "./performance";
 
-export type { InitOptions } from "./client";
+export type { CaptureConfig, InitOptions } from "./client";
 export { registerErrorInstrumentation } from "./errors";
 export type { Breadcrumb, BreadcrumbCategory } from "./event";
 export { registerInteractionInstrumentation } from "./interactions";
@@ -35,6 +36,31 @@ export { addBreadcrumb, captureException };
 // register both without the cycle.
 let instrumentationRegistered = false;
 
+// US-16.02 "Configure Collection": every category defaults to true — an
+// app that doesn't set `capture` at all keeps today's existing behavior
+// exactly. Pulled out as its own pure function, exported for direct
+// testing, specifically so a test never has to mock() any of the five
+// register*Instrumentation imports above: mock.module() replaces a
+// module in bun:test's *shared* registry for the whole run, and
+// errors.test.ts/network.test.ts/performance.test.ts/etc. each need the
+// *real* implementation of their own module to test it directly — a
+// test file here mocking "./errors" etc. to observe init()'s wiring
+// would silently break every one of those other files' own tests
+// instead (confirmed the hard way: doing exactly that made
+// performance.test.ts's real assertions fail against a stub that
+// doesn't call web-vitals' callbacks at all).
+export function resolveCaptureConfig(
+	capture: CaptureConfig | undefined,
+): Required<CaptureConfig> {
+	return {
+		errors: capture?.errors ?? true,
+		network: capture?.network ?? true,
+		performance: capture?.performance ?? true,
+		navigation: capture?.navigation ?? true,
+		interactions: capture?.interactions ?? true,
+	};
+}
+
 export function init(options: InitOptions) {
 	const client = initClient(options);
 
@@ -44,11 +70,22 @@ export function init(options: InitOptions) {
 	// on top of the already-wrapped one (and register a second pair of
 	// error listeners), not just no-op.
 	if (!instrumentationRegistered) {
-		registerErrorInstrumentation();
-		registerNetworkInstrumentation({ ignoreUrlPrefix: options.endpoint });
-		registerPerformanceInstrumentation();
-		registerNavigationInstrumentation();
-		registerInteractionInstrumentation();
+		const capture = resolveCaptureConfig(options.capture);
+		if (capture.errors) {
+			registerErrorInstrumentation();
+		}
+		if (capture.network) {
+			registerNetworkInstrumentation({ ignoreUrlPrefix: options.endpoint });
+		}
+		if (capture.performance) {
+			registerPerformanceInstrumentation();
+		}
+		if (capture.navigation) {
+			registerNavigationInstrumentation();
+		}
+		if (capture.interactions) {
+			registerInteractionInstrumentation();
+		}
 		instrumentationRegistered = true;
 	}
 

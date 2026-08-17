@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import { registerErrorInstrumentation } from "./errors";
 import { registerInteractionInstrumentation } from "./interactions";
 import { registerNavigationInstrumentation } from "./navigation";
@@ -20,15 +20,21 @@ import { registerPerformanceInstrumentation } from "./performance";
 // from globalThis for the scope of one test and restore them
 // immediately after, not skip coverage because the ambient environment
 // makes it inconvenient.
-
+//
+// Restore is a synchronous try/finally *inside* each test, not a
+// shared afterEach — found the hard way (real, intermittent failures
+// while working on an unrelated change: dozens of unrelated tests
+// across other files started failing with "window is not defined").
+// bun:test wraps every test body in its own internal promise handling
+// even for a fully synchronous test, which is enough of a scheduling
+// gap for another file's test to observe these globals mid-deletion if
+// bun interleaves file execution — afterEach fires after that gap, a
+// same-body try/finally does not leave one at all.
 const originalWindow = globalThis.window;
 const originalDocument = globalThis.document;
 const originalNavigator = globalThis.navigator;
 const originalHistory = globalThis.history;
 
-// Reproducing a genuine non-browser environment requires each property
-// to be *absent*, not merely undefined — `typeof window` on a deleted
-// global is "undefined", the exact condition each guard checks for.
 function removeBrowserGlobals(): void {
 	delete (globalThis as { window?: unknown }).window;
 	delete (globalThis as { document?: unknown }).document;
@@ -43,35 +49,51 @@ function restoreBrowserGlobals(): void {
 	globalThis.history = originalHistory;
 }
 
-afterEach(() => {
-	restoreBrowserGlobals();
-});
-
 describe("register* instrumentation — SSR safety", () => {
 	it("registerErrorInstrumentation never throws when window is undefined", () => {
 		removeBrowserGlobals();
-		expect(() => registerErrorInstrumentation()).not.toThrow();
+		try {
+			expect(() => registerErrorInstrumentation()).not.toThrow();
+		} finally {
+			restoreBrowserGlobals();
+		}
 	});
 
 	it("registerNetworkInstrumentation never throws when window is undefined", () => {
 		removeBrowserGlobals();
-		expect(() =>
-			registerNetworkInstrumentation({ ignoreUrlPrefix: "http://x" }),
-		).not.toThrow();
+		try {
+			expect(() =>
+				registerNetworkInstrumentation({ ignoreUrlPrefix: "http://x" }),
+			).not.toThrow();
+		} finally {
+			restoreBrowserGlobals();
+		}
 	});
 
 	it("registerNavigationInstrumentation never throws when window is undefined", () => {
 		removeBrowserGlobals();
-		expect(() => registerNavigationInstrumentation()).not.toThrow();
+		try {
+			expect(() => registerNavigationInstrumentation()).not.toThrow();
+		} finally {
+			restoreBrowserGlobals();
+		}
 	});
 
 	it("registerInteractionInstrumentation never throws when document is undefined", () => {
 		removeBrowserGlobals();
-		expect(() => registerInteractionInstrumentation()).not.toThrow();
+		try {
+			expect(() => registerInteractionInstrumentation()).not.toThrow();
+		} finally {
+			restoreBrowserGlobals();
+		}
 	});
 
 	it("registerPerformanceInstrumentation never throws when window is undefined", () => {
 		removeBrowserGlobals();
-		expect(() => registerPerformanceInstrumentation()).not.toThrow();
+		try {
+			expect(() => registerPerformanceInstrumentation()).not.toThrow();
+		} finally {
+			restoreBrowserGlobals();
+		}
 	});
 });

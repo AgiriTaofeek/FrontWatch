@@ -1,0 +1,23 @@
+-- US-16.03 Configure Retention: no retention policy existed anywhere
+-- before this, the events table grew unboundedly forever. 90 days is a
+-- reasonable documented default, not a hardcoded final answer - real
+-- operator control over the actual duration is
+-- scripts/set-clickhouse-retention.sh, not editing this file and
+-- re-migrating. Full reasoning in PROGRESS.md's Post-MVP gap closure
+-- section (Configure Retention).
+--
+-- Plain ASCII punctuation only in this comment block, deliberately -
+-- golang-migrate's ClickHouse x-multi-statement splitter was confirmed
+-- (not assumed) to fail with a misleading "Empty query" error on the
+-- exact same statement below when the comment above it contained an
+-- em dash, smart quotes, or backticks - a parser fragility in the
+-- migration tool itself, not a ClickHouse syntax issue.
+--
+-- toDate(client_timestamp), not the raw column, since a TTL expression
+-- must resolve to Date or DateTime and rejects DateTime64 outright
+-- (confirmed directly against a real ClickHouse instance). Using the
+-- same toDate() expression the table is already partitioned by
+-- (PARTITION BY toDate(client_timestamp)) is also the efficient path:
+-- a whole aged-out partition can be dropped directly, not deleted row
+-- by row.
+ALTER TABLE events MODIFY TTL toDate(client_timestamp) + INTERVAL 90 DAY;
