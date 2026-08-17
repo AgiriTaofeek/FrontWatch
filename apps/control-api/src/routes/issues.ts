@@ -27,7 +27,7 @@ export const issuesRoutes = new Elysia()
 				release: query.release,
 				route: query.route,
 				...parseClickHouseTimeRangeQuery(query),
-				limit: query.limit ? Number(query.limit) : undefined,
+				limit: query.limit,
 			});
 			return { issues };
 		},
@@ -38,7 +38,19 @@ export const issuesRoutes = new Elysia()
 				route: t.Optional(t.String()),
 				from: t.Optional(t.String()),
 				to: t.Optional(t.String()),
-				limit: t.Optional(t.String()),
+				// t.Number, not t.String — Elysia 1.1+ coerces t.Number for
+				// query schemas automatically. A non-numeric limit ("abc")
+				// used to become NaN (Number("abc")), which db/issues.ts's
+				// own `filters.limit ?? DEFAULT_LIMIT` doesn't catch (?? only
+				// substitutes on null/undefined, not NaN) — NaN would then
+				// bind to a ClickHouse {limit:UInt32} param and throw,
+				// surfacing as an uncaught 503 instead of a clean 400. Now
+				// rejected before the handler runs. No `maximum` here
+				// deliberately — db/issues.ts's own Math.min(..., MAX_LIMIT)
+				// already clamps an oversized value rather than rejecting
+				// it, an intentional, different tradeoff this fix doesn't
+				// change.
+				limit: t.Optional(t.Number({ minimum: 1 })),
 			}),
 		},
 	)

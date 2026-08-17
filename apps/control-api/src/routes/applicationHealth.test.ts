@@ -99,6 +99,44 @@ describe("GET /projects/:projectId/health", () => {
 		expect(body.windowMinutes).toBe(5);
 	});
 
+	it("rejects a non-numeric windowMinutes with a clean 422, not a 503", async () => {
+		// Regression test — this used to produce NaN -> an Invalid Date ->
+		// a thrown RangeError inside toClickHouseDateTime64() -> mapped by
+		// errorHandlingPlugin to a blanket 503 "dependency unavailable",
+		// mislabeling a client input error as a backend outage. Confirmed
+		// the old behavior actually did that before fixing it, not assumed.
+		const response = await applicationHealthRoutes.handle(
+			new Request(
+				`http://localhost/projects/${projectId}/health?windowMinutes=abc`,
+				{ headers: { Cookie: principal.cookie } },
+			),
+		);
+		expect(response.status).toBe(422);
+	});
+
+	it("rejects a negative windowMinutes with a clean 422", async () => {
+		// Regression test — a negative value used to parse successfully and
+		// put windowStart in the future, misreporting an actively-erroring
+		// app as "stale" with its error data zeroed out.
+		const response = await applicationHealthRoutes.handle(
+			new Request(
+				`http://localhost/projects/${projectId}/health?windowMinutes=-60`,
+				{ headers: { Cookie: principal.cookie } },
+			),
+		);
+		expect(response.status).toBe(422);
+	});
+
+	it("rejects a zero windowMinutes with a clean 422", async () => {
+		const response = await applicationHealthRoutes.handle(
+			new Request(
+				`http://localhost/projects/${projectId}/health?windowMinutes=0`,
+				{ headers: { Cookie: principal.cookie } },
+			),
+		);
+		expect(response.status).toBe(422);
+	});
+
 	it("returns 401 without a session", async () => {
 		const response = await applicationHealthRoutes.handle(
 			new Request(`http://localhost/projects/${projectId}/health`),

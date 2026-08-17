@@ -89,6 +89,15 @@ describe("GET /projects/:projectId/sessions", () => {
 		await db.delete(projects).where(eq(projects.id, otherProject.id));
 	});
 
+	it("rejects a non-numeric limit with a clean 422, not a 503", async () => {
+		const response = await sessionsRoutes.handle(
+			new Request(`http://localhost/projects/${projectId}/sessions?limit=abc`, {
+				headers: { Cookie: principal.cookie },
+			}),
+		);
+		expect(response.status).toBe(422);
+	});
+
 	it("returns 401 without a session", async () => {
 		const response = await sessionsRoutes.handle(
 			new Request(`http://localhost/projects/${projectId}/sessions`),

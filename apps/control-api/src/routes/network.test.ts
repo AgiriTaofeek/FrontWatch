@@ -163,6 +163,18 @@ describe("GET /projects/:projectId/network", () => {
 		expect(body.resources[0].resource).toBe("/api/checkout");
 	});
 
+	it("rejects a non-numeric limit with a clean 422, not a 503", async () => {
+		// Regression test — this used to produce NaN, which flows past
+		// `?? DEFAULT_LIMIT` (only substitutes on null/undefined) into a
+		// ClickHouse {limit:UInt32} bind param and throws there instead.
+		const response = await networkRoutes.handle(
+			new Request(`http://localhost/projects/${projectId}/network?limit=abc`, {
+				headers: { Cookie: principal.cookie },
+			}),
+		);
+		expect(response.status).toBe(422);
+	});
+
 	it("returns 401 without a session", async () => {
 		const response = await networkRoutes.handle(
 			new Request(`http://localhost/projects/${projectId}/network`),

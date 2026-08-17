@@ -20,7 +20,7 @@ export const navigationRoutes = new Elysia().use(authPlugin()).get(
 		const transitions = await listNavigationTransitions(params.projectId, {
 			release: query.release,
 			...parseClickHouseTimeRangeQuery(query),
-			limit: query.limit ? Number(query.limit) : undefined,
+			limit: query.limit,
 		});
 		return { transitions };
 	},
@@ -30,7 +30,8 @@ export const navigationRoutes = new Elysia().use(authPlugin()).get(
 			release: t.Optional(t.String()),
 			from: t.Optional(t.String()),
 			to: t.Optional(t.String()),
-			limit: t.Optional(t.String()),
+			// t.Number, not t.String — see issues.ts's identical comment.
+			limit: t.Optional(t.Number({ minimum: 1 })),
 		}),
 	},
 );

@@ -436,6 +436,26 @@ A second pass, this time reading `E15-search.md`/`E16-privacy.md`/`E18-framework
 
 ---
 
+## Code review findings addressed (2026-08-17)
+
+A `/code-review high` pass across the full diff from PR #41 through #52 (six parallel angles: correctness, efficiency, simplification, reuse, conventions, and two independent line-by-line scans) surfaced 19 real findings, most-severe first. Being fixed incrementally, same discipline as everything else in this file — real verification each time, not just "the diff looks right."
+
+- [x] **Query-param validation: `windowMinutes`/`limit` now real, typed, and enforced by Elysia itself** (findings 1, 2, 5)
+  - [x] The bug: `query.windowMinutes ? Number(query.windowMinutes) : undefined` and the equivalent for `limit` on `issues`/`network`/`sessions`/`navigation` performed no validation — a non-numeric value produced `NaN` (not `undefined`, so default-parameter fallbacks never kicked in), which flowed into `toClickHouseDateTime64()` (`.toISOString()` on an Invalid Date throws `RangeError`) or a ClickHouse `UInt32` bind param (rejected, throws inside the query call) — either way, an uncaught exception that `errorHandlingPlugin` maps to a blanket `503 DEPENDENCY_UNAVAILABLE`, mislabeling a client input error as a backend outage. A *negative* `windowMinutes` was worse: it parsed successfully and put `windowStart` in the future, so an actively-erroring application's own health check reported it as `"stale"` with error data zeroed out
+  - [x] Fixed at the route boundary, not defensively re-checked deeper in the call chain: every affected query schema's `t.Optional(t.String())` became `t.Optional(t.Number({ minimum: 1 }))` — Elysia 1.1+ coerces `t.Number` for query/params schemas automatically (confirmed against current docs via context7, not assumed), so a non-numeric, zero, or negative value is now rejected with a clean `422` before the handler ever runs. No `maximum` added for `limit` — `db/issues.ts`'s own `Math.min(filters.limit ?? DEFAULT_LIMIT, MAX_LIMIT)` already clamps an oversized value intentionally, a different, pre-existing tradeoff this fix doesn't change
+  - [x] 7 new regression tests (non-numeric/negative/zero `windowMinutes`, non-numeric `limit` on all four affected routes) — 226 control-api tests passing (was 219). `biome`/`tsc` clean
+  - [x] **Real end-to-end verification against a live server**: registered a real org/project, confirmed `?windowMinutes=abc` and `?windowMinutes=-60` both `422`, a valid `?windowMinutes=30` still `200`s, and `?limit=abc` on issues `422`s — the exact requests that used to 503 or silently misreport
+- [ ] Privacy redaction: multi-word secrets partially leak, nested breadcrumb data bypasses redaction entirely (findings 3, 4)
+- [ ] Health dashboard's own time-window filter never wired up on the frontend (finding 6)
+- [ ] Filtered empty states don't distinguish "no data ever" from "no data for this filter" (finding 7)
+- [ ] `parseClickHouseTimeRangeQuery` silently drops an invalid `from`/`to` instead of a clean error (finding 8)
+- [ ] `authorizeApplicationAccess`/`authorizeEnvironmentAccess`/`...WithFallback` triplicated auth logic (finding 9)
+- [ ] Efficiency: sequential awaits in `applicationHealth.ts`, double-fetch in `applications.ts`/`environments.ts`, breadcrumb ring buffer O(n) copy, `applyPrivacy`'s rules array rebuilt every call (findings 10, 11, 15, 16)
+- [ ] Reuse: `db/navigation.ts`'s filter-builder duplicated a 5th time, `formatPercent` duplicated + `HealthOverview` reaching into a component file, 8 route files hand-copying the same nav bar (findings 12, 13, 14)
+- [ ] Simplification: SSR guard duplicated across 5 modules instead of centralized, 5 list components copy-pasting the same filter-state wiring, `ApplicationHealth`'s invariant living only in a comment instead of the type system (findings 17, 18, 19)
+
+---
+
 ## Deviations log
 
 - **2026-08-14, Step 6**: Issue list endpoint built as `GET /api/v1/projects/:projectId/issues` instead of `api-contracts.md`'s documented `GET /api/v1/applications/{id}/issues`. Reason: `Application` isn't a real entity yet (Step 2's deliberate nullable-FK shortcut on `projects`), and `project_id` is what `events` in ClickHouse is actually keyed by. Revisit once `Application` is real (not currently scheduled).

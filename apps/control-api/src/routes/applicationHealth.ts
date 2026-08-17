@@ -21,14 +21,25 @@ export const applicationHealthRoutes = new Elysia().use(authPlugin()).get(
 
 		const health = await getApplicationHealth(
 			params.projectId,
-			query.windowMinutes ? Number(query.windowMinutes) : undefined,
+			query.windowMinutes,
 		);
 		return health;
 	},
 	{
 		params: t.Object({ projectId: t.String({ format: "uuid" }) }),
+		// t.Number, not t.String — Elysia 1.1+ coerces t.Number for
+		// query/params schemas automatically (same effect as t.Numeric),
+		// which closes a real, previously-missing validation gap for free:
+		// a non-numeric or negative windowMinutes ("abc", "-60") is now
+		// rejected with a clean 422 before the handler ever runs, instead
+		// of producing NaN / an Invalid Date that later throws inside
+		// toClickHouseDateTime64() and gets mislabeled as a 503 "dependency
+		// unavailable" (confirmed the old behavior actually did that, not
+		// assumed). minimum: 1 also closes the negative-window bug where
+		// windowStart could land in the future and misreport an actively-
+		// erroring app as "stale".
 		query: t.Object({
-			windowMinutes: t.Optional(t.String()),
+			windowMinutes: t.Optional(t.Number({ minimum: 1 })),
 		}),
 	},
 );
