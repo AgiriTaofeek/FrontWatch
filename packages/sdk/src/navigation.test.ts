@@ -11,6 +11,7 @@ mock.module("./client", () => ({
 	captureNetworkEvent: mock(() => {}),
 	capturePerformanceEvent: mock(() => {}),
 	captureNavigationEvent: captureNavigationEventMock,
+	init: mock(() => {}),
 }));
 
 const { __resetNavigationForTests, registerNavigationInstrumentation } =
