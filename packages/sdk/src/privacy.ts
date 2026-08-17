@@ -72,9 +72,25 @@ const BUILT_IN_RULES: PrivacyRule[] = [
 		// stack trace or captured URL realistically contains. Replacement
 		// keeps the field name and drops only the value, which is more
 		// useful for investigation than blanking the whole match.
+		//
+		// The value alternatives matter: a real, previously-shipped bug
+		// (code review, 2026-08-17) had the value stop at the first
+		// whitespace ([^\s"',}]+), so a multi-word secret like
+		// `password=hunter two words` only redacted "hunter" and shipped
+		// " two words" in cleartext — verified empirically, not assumed.
+		// Fixed with three alternatives, tried in order: a double-quoted
+		// value (spaces allowed inside), a single-quoted value (same), or
+		// an unquoted value that consumes everything up to the next `,`/`}`
+		// or line break (not just the next space) — deliberately
+		// over-redacting any trailing prose on the same unquoted fragment
+		// rather than risk leaking part of the actual secret, the same
+		// "over-redact rather than under-redact" tradeoff the payment-card
+		// rule below already makes. Stopping at a line break specifically
+		// keeps this from swallowing an entire multi-line stack trace once
+		// one line happens to contain an unquoted "token=...".
 		name: "credential-field",
 		pattern:
-			/(password|passwd|token|secret|api[_-]?key|authorization)["']?\s*[:=]\s*["']?[^\s"',}]+/gi,
+			/(password|passwd|token|secret|api[_-]?key|authorization)["']?\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^,}\n]+)/gi,
 		replacement: "$1=[REDACTED]",
 	},
 	{
@@ -113,20 +129,67 @@ function redactString(value: string, rules: readonly PrivacyRule[]): string {
 	return result;
 }
 
-// data is an open Record<string, unknown> (a developer can pass anything
-// to addBreadcrumb's second argument) — only string *values* get run
-// through the redaction rules; a non-string value (number, boolean,
-// nested object) is left as-is, since the rules operate on strings and
-// this SDK doesn't capture free-text object values automatically anyway
-// (interactions.ts never populates `data` at all, only `message`).
+// data is an open Record<string, unknown> — addBreadcrumb() is the one
+// manual, developer-facing API this SDK has (index.ts's own export),
+// and its second argument is fully open, so a real caller can and does
+// pass nested structures: addBreadcrumb("transfer failed", { user: {
+// email: "jane.doe@example.com" } }). A real, previously-shipped bug
+// (code review, 2026-08-17) only walked one level deep — a string
+// value's own comment used to justify this by saying "this SDK doesn't
+// capture free-text object values automatically anyway," which is true
+// for automatic instrumentation but not for the one API this function
+// exists specifically to protect. Recurses through plain objects and
+// arrays now; only primitives (number/boolean/null/undefined) and
+// values already handled elsewhere pass through unredacted.
+//
+// depth is a bounded recursion guard, not a stylistic choice — a
+// circular reference or a pathologically deep structure passed to the
+// open addBreadcrumb() API must not be able to blow the call stack or
+// hang the host page (the same "SDK failures must never crash the
+// application" guarantee client.ts's own constructor already makes).
+// Past the limit, the whole subtree is replaced rather than risk
+// descending into a cycle — fail closed, same principle redactString's
+// own try/catch already applies to a single field.
+const MAX_BREADCRUMB_DATA_DEPTH = 5;
+
+function redactBreadcrumbDataValue(
+	value: unknown,
+	rules: readonly PrivacyRule[],
+	depth: number,
+): unknown {
+	if (typeof value === "string") {
+		return redactString(value, rules);
+	}
+	if (depth >= MAX_BREADCRUMB_DATA_DEPTH) {
+		return Array.isArray(value) || (value !== null && typeof value === "object")
+			? DEFAULT_REPLACEMENT
+			: value;
+	}
+	if (Array.isArray(value)) {
+		return value.map((item) =>
+			redactBreadcrumbDataValue(item, rules, depth + 1),
+		);
+	}
+	if (value !== null && typeof value === "object") {
+		return redactBreadcrumbData(
+			value as Record<string, unknown>,
+			rules,
+			depth + 1,
+		);
+	}
+	// number/boolean/null/undefined — nothing for a redaction rule to
+	// operate on.
+	return value;
+}
+
 function redactBreadcrumbData(
 	data: Record<string, unknown>,
 	rules: readonly PrivacyRule[],
+	depth = 0,
 ): Record<string, unknown> {
 	const result: Record<string, unknown> = {};
 	for (const [key, value] of Object.entries(data)) {
-		result[key] =
-			typeof value === "string" ? redactString(value, rules) : value;
+		result[key] = redactBreadcrumbDataValue(value, rules, depth);
 	}
 	return result;
 }
