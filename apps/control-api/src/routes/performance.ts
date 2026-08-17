@@ -1,4 +1,5 @@
 import { Elysia, t } from "elysia";
+import { parseClickHouseTimeRangeQuery } from "../db/clickhouse";
 import { listPerformanceMetrics } from "../db/performance";
 import { authorizeProjectAccess } from "../lib/authorization";
 import { authPlugin } from "../lib/authPlugin";
@@ -17,15 +18,19 @@ export const performanceRoutes = new Elysia().use(authPlugin()).get(
 		}
 
 		const metrics = await listPerformanceMetrics(params.projectId, {
+			// Same small pre-existing gap as network.ts: listPerformanceMetrics
+			// already supports `release` (releaseHealth.ts's own filtering
+			// needs it), this route just never exposed it as a real query param.
+			release: query.release,
 			route: query.route,
-			from: query.from,
-			to: query.to,
+			...parseClickHouseTimeRangeQuery(query),
 		});
 		return { metrics };
 	},
 	{
 		params: t.Object({ projectId: t.String({ format: "uuid" }) }),
 		query: t.Object({
+			release: t.Optional(t.String()),
 			route: t.Optional(t.String()),
 			from: t.Optional(t.String()),
 			to: t.Optional(t.String()),

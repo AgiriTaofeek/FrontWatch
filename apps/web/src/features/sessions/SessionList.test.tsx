@@ -8,6 +8,7 @@ import {
 	RouterProvider,
 } from "@tanstack/react-router";
 import { render, screen } from "@testing-library/react";
+import { DEFAULT_FILTER_BAR_VALUE } from "../../components/FilterBar";
 import { sessionsQueryOptions } from "./api";
 import { SessionList } from "./SessionList";
 
@@ -15,7 +16,12 @@ import { SessionList } from "./SessionList";
 // SessionList renders a <Link> per row.
 function renderWithSessions(projectId: string, sessions: ListSessionsResponse) {
 	const queryClient = new QueryClient();
-	queryClient.setQueryData(sessionsQueryOptions(projectId).queryKey, sessions);
+	// Must match SessionList's own default filter state — see
+	// NetworkList.test.tsx's identical comment for why.
+	queryClient.setQueryData(
+		sessionsQueryOptions(projectId, DEFAULT_FILTER_BAR_VALUE).queryKey,
+		sessions,
+	);
 
 	const rootRoute = createRootRoute({
 		component: () => (

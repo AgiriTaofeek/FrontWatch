@@ -1,4 +1,5 @@
 import { Elysia, t } from "elysia";
+import { parseClickHouseTimeRangeQuery } from "../db/clickhouse";
 import { getSession, listSessions, parseSessionId } from "../db/sessions";
 import { authorizeProjectAccess } from "../lib/authorization";
 import { authPlugin } from "../lib/authPlugin";
@@ -19,8 +20,7 @@ export const sessionsRoutes = new Elysia()
 			}
 
 			const sessions = await listSessions(params.projectId, {
-				from: query.from,
-				to: query.to,
+				...parseClickHouseTimeRangeQuery(query),
 				limit: query.limit ? Number(query.limit) : undefined,
 			});
 			return { sessions };
