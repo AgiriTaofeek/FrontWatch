@@ -8,6 +8,7 @@ import {
 	RouterProvider,
 } from "@tanstack/react-router";
 import { render, screen } from "@testing-library/react";
+import { DEFAULT_FILTER_BAR_VALUE } from "../../components/FilterBar";
 import { networkResourcesQueryOptions } from "./api";
 import { NetworkList } from "./NetworkList";
 
@@ -20,8 +21,12 @@ function renderWithResources(
 	resources: ListNetworkResourcesResponse,
 ) {
 	const queryClient = new QueryClient();
+	// Must match NetworkList's own default filter state exactly — the
+	// query key includes filters now, so seeding the cache under a
+	// different key would leave the component's real query un-seeded
+	// and it would suspend on a real (unmocked) fetch instead.
 	queryClient.setQueryData(
-		networkResourcesQueryOptions(projectId).queryKey,
+		networkResourcesQueryOptions(projectId, DEFAULT_FILTER_BAR_VALUE).queryKey,
 		resources,
 	);
 

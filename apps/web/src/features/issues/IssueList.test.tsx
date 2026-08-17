@@ -8,6 +8,7 @@ import {
 	RouterProvider,
 } from "@tanstack/react-router";
 import { render, screen } from "@testing-library/react";
+import { DEFAULT_FILTER_BAR_VALUE } from "../../components/FilterBar";
 import { issuesQueryOptions } from "./api";
 import { IssueList } from "./IssueList";
 
@@ -20,7 +21,12 @@ import { IssueList } from "./IssueList";
 // QueryClientProvider gets nested in.
 function renderWithIssues(projectId: string, issues: ListIssuesResponse) {
 	const queryClient = new QueryClient();
-	queryClient.setQueryData(issuesQueryOptions(projectId).queryKey, issues);
+	// Must match IssueList's own default filter state — see
+	// NetworkList.test.tsx's identical comment for why.
+	queryClient.setQueryData(
+		issuesQueryOptions(projectId, DEFAULT_FILTER_BAR_VALUE).queryKey,
+		issues,
+	);
 
 	const rootRoute = createRootRoute({
 		component: () => (

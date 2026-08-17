@@ -1,4 +1,5 @@
 import { Elysia, t } from "elysia";
+import { parseClickHouseTimeRangeQuery } from "../db/clickhouse";
 import { getIssue, listIssues, parseIssueId } from "../db/issues";
 import { authorizeProjectAccess } from "../lib/authorization";
 import { authPlugin } from "../lib/authPlugin";
@@ -25,8 +26,7 @@ export const issuesRoutes = new Elysia()
 			const issues = await listIssues(params.projectId, {
 				release: query.release,
 				route: query.route,
-				from: query.from,
-				to: query.to,
+				...parseClickHouseTimeRangeQuery(query),
 				limit: query.limit ? Number(query.limit) : undefined,
 			});
 			return { issues };

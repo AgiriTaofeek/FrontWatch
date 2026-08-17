@@ -8,6 +8,7 @@ import {
 	RouterProvider,
 } from "@tanstack/react-router";
 import { render, screen } from "@testing-library/react";
+import { DEFAULT_FILTER_BAR_VALUE } from "../../components/FilterBar";
 import { navigationTransitionsQueryOptions } from "./api";
 import { NavigationList } from "./NavigationList";
 
@@ -17,8 +18,11 @@ function renderWithTransitions(
 	transitions: ListNavigationTransitionsResponse,
 ) {
 	const queryClient = new QueryClient();
+	// Must match NavigationList's own default filter state — see
+	// NetworkList.test.tsx's identical comment for why.
 	queryClient.setQueryData(
-		navigationTransitionsQueryOptions(projectId).queryKey,
+		navigationTransitionsQueryOptions(projectId, DEFAULT_FILTER_BAR_VALUE)
+			.queryKey,
 		transitions,
 	);
 

@@ -1,4 +1,5 @@
 import { Elysia, t } from "elysia";
+import { parseClickHouseTimeRangeQuery } from "../db/clickhouse";
 import { listNavigationTransitions } from "../db/navigation";
 import { authorizeProjectAccess } from "../lib/authorization";
 import { authPlugin } from "../lib/authPlugin";
@@ -18,8 +19,7 @@ export const navigationRoutes = new Elysia().use(authPlugin()).get(
 
 		const transitions = await listNavigationTransitions(params.projectId, {
 			release: query.release,
-			from: query.from,
-			to: query.to,
+			...parseClickHouseTimeRangeQuery(query),
 			limit: query.limit ? Number(query.limit) : undefined,
 		});
 		return { transitions };

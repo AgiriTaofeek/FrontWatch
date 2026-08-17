@@ -1,50 +1,60 @@
 import type { PerformanceMetricSummary } from "@frontwatch/contracts";
 import { useSuspenseQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import {
+	DEFAULT_FILTER_BAR_VALUE,
+	FilterBar,
+	type FilterBarValue,
+} from "../../components/FilterBar";
 import { performanceMetricsQueryOptions } from "./api";
 
-// ui-patterns.md §4: same "No X found" empty state as IssueList/
-// NetworkList/SessionList — no time-range filter UI exists yet here
-// either, same reasoning.
-//
 // No per-metric detail page — same "no natural drill-down target"
 // reasoning NetworkList's own comment already gives for network
 // resources; a metric's five rows are already the whole picture.
 export function PerformanceList({ projectId }: { projectId: string }) {
-	const { data } = useSuspenseQuery(performanceMetricsQueryOptions(projectId));
-
-	if (data.metrics.length === 0) {
-		return <p>No performance metrics recorded for this project.</p>;
-	}
+	const [filters, setFilters] = useState<FilterBarValue>(
+		DEFAULT_FILTER_BAR_VALUE,
+	);
+	const { data } = useSuspenseQuery(
+		performanceMetricsQueryOptions(projectId, filters),
+	);
 
 	return (
-		<table>
-			<thead>
-				<tr>
-					<th>Metric</th>
-					<th>Samples</th>
-					<th>p50</th>
-					<th>p75</th>
-					<th>Good</th>
-					<th>Needs improvement</th>
-					<th>Poor</th>
-					<th>Last seen</th>
-				</tr>
-			</thead>
-			<tbody>
-				{data.metrics.map((metric) => (
-					<tr key={metric.metricName}>
-						<td>{metric.metricName}</td>
-						<td>{metric.sampleCount}</td>
-						<td>{formatValue(metric.metricName, metric.p50Value)}</td>
-						<td>{formatValue(metric.metricName, metric.p75Value)}</td>
-						<td>{formatPercent(metric.goodRate)}</td>
-						<td>{metric.needsImprovementCount}</td>
-						<td>{metric.poorCount}</td>
-						<td>{metric.lastSeenAt}</td>
-					</tr>
-				))}
-			</tbody>
-		</table>
+		<div>
+			<FilterBar value={filters} onChange={setFilters} />
+			{data.metrics.length === 0 ? (
+				<p>No performance metrics recorded for this project.</p>
+			) : (
+				<table>
+					<thead>
+						<tr>
+							<th>Metric</th>
+							<th>Samples</th>
+							<th>p50</th>
+							<th>p75</th>
+							<th>Good</th>
+							<th>Needs improvement</th>
+							<th>Poor</th>
+							<th>Last seen</th>
+						</tr>
+					</thead>
+					<tbody>
+						{data.metrics.map((metric) => (
+							<tr key={metric.metricName}>
+								<td>{metric.metricName}</td>
+								<td>{metric.sampleCount}</td>
+								<td>{formatValue(metric.metricName, metric.p50Value)}</td>
+								<td>{formatValue(metric.metricName, metric.p75Value)}</td>
+								<td>{formatPercent(metric.goodRate)}</td>
+								<td>{metric.needsImprovementCount}</td>
+								<td>{metric.poorCount}</td>
+								<td>{metric.lastSeenAt}</td>
+							</tr>
+						))}
+					</tbody>
+				</table>
+			)}
+		</div>
 	);
 }
 

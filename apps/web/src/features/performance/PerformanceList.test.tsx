@@ -8,6 +8,7 @@ import {
 	RouterProvider,
 } from "@tanstack/react-router";
 import { render, screen } from "@testing-library/react";
+import { DEFAULT_FILTER_BAR_VALUE } from "../../components/FilterBar";
 import { performanceMetricsQueryOptions } from "./api";
 import { PerformanceList } from "./PerformanceList";
 
@@ -19,8 +20,11 @@ function renderWithMetrics(
 	metrics: ListPerformanceMetricsResponse,
 ) {
 	const queryClient = new QueryClient();
+	// Must match PerformanceList's own default filter state — see
+	// NetworkList.test.tsx's identical comment for why.
 	queryClient.setQueryData(
-		performanceMetricsQueryOptions(projectId).queryKey,
+		performanceMetricsQueryOptions(projectId, DEFAULT_FILTER_BAR_VALUE)
+			.queryKey,
 		metrics,
 	);
 

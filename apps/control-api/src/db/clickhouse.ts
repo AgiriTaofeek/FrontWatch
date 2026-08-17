@@ -62,10 +62,44 @@ export const clickhouse = createClient({
 // their own "YYYY-MM-DD HH:MM:SS.mmm" instead. Confirmed directly: a
 // native Date's toISOString() passed as a {since:DateTime64(3)} query
 // param fails with "cannot be parsed ... only 23 of 24 bytes was
-// parsed." No existing code in this file converted a real Date before
-// this — every other from/to filter is an opaque string passed
-// straight through from an HTTP query param — so this is the first
-// place that actually needed it.
+// parsed."
 export function toClickHouseDateTime64(date: Date): string {
 	return date.toISOString().replace("T", " ").replace("Z", "");
+}
+
+// This file's own earlier comment noted "every other from/to filter is
+// an opaque string passed straight through from an HTTP query param" as
+// if that were a settled design choice — it wasn't, it was a real,
+// previously-latent bug: db/{issues,network,sessions,performance,
+// navigation}.ts's own from/to filters bind straight to a
+// {from:DateTime64(3)} query param too (same file, same struct), so a
+// real HTTP caller sending standard ISO-8601 (the only format any sane
+// API consumer, frontend or otherwise, would send) hits the identical
+// "cannot be parsed" rejection above — just never triggered, since
+// nothing had ever actually sent a real from/to value through this path
+// before the dashboard's own filter UI needed to. Every route with a
+// from/to query param converts through this before calling its db-layer
+// function, so ListXFilters.from/to themselves stay ClickHouse-ready
+// strings (existing test fixtures that construct them directly,
+// bypassing the route layer, are unaffected).
+export function parseClickHouseTimeRangeQuery(query: {
+	from?: string;
+	to?: string;
+}): { from?: string; to?: string } {
+	const parse = (value: string | undefined): string | undefined => {
+		if (!value) {
+			return undefined;
+		}
+		const date = new Date(value);
+		// An unparseable from/to is a client error worth ignoring rather
+		// than crashing the request over — same "don't let a bad optional
+		// filter value take down an otherwise-valid request" reasoning
+		// db/issues.ts's own defensive breadcrumb parsing already uses,
+		// just applied to a query param instead of a stored payload.
+		if (Number.isNaN(date.getTime())) {
+			return undefined;
+		}
+		return toClickHouseDateTime64(date);
+	};
+	return { from: parse(query.from), to: parse(query.to) };
 }
