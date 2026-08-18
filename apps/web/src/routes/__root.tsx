@@ -1,3 +1,4 @@
+import { FrontwatchErrorBoundary, useFrontwatchInit } from "@frontwatch/react";
 import {
 	createRootRoute,
 	HeadContent,
@@ -21,10 +22,32 @@ export const Route = createRootRoute({
 	component: RootComponent,
 });
 
+// ADR-024's own stated intent ("apps/web doubles as SDK dogfooding
+// target") was never actually wired up — apps/demo was the only real
+// consumer of the SDK before this. Real dogfooding via the actual React
+// adapter, not the raw core: VITE_FRONTWATCH_PUBLIC_KEY unset (the
+// common case — CI, most local dev) means useFrontwatchInit() still runs
+// safely every render, it just initializes a disabled client (same
+// "bad/missing config never crashes the host app" guarantee client.ts's
+// own constructor already provides) — no conditional needed here.
 function RootComponent() {
+	useFrontwatchInit({
+		publicKey: import.meta.env.VITE_FRONTWATCH_PUBLIC_KEY ?? "",
+		endpoint:
+			import.meta.env.VITE_FRONTWATCH_ENDPOINT ?? "http://localhost:8080",
+		environment: import.meta.env.MODE,
+	});
+
 	return (
 		<RootDocument>
-			<Outlet />
+			{/* Wraps only the routed content, not the <html>/<head>/<Scripts>
+			shell — a route-level render error shouldn't also take down the
+			page shell around it. */}
+			<FrontwatchErrorBoundary
+				fallback={<p>Something went wrong loading this page.</p>}
+			>
+				<Outlet />
+			</FrontwatchErrorBoundary>
 		</RootDocument>
 	);
 }

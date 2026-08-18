@@ -81,6 +81,9 @@ jobs:
       - name: Typecheck (sdk)
         working-directory: packages/sdk
         run: bunx tsc --noEmit
+      - name: Typecheck (react)
+        working-directory: packages/react
+        run: bunx tsc --noEmit
       - name: Typecheck (control-api)
         working-directory: apps/control-api
         run: bunx tsc --noEmit
@@ -132,6 +135,9 @@ jobs:
         # locally: happy-dom's window never registers when run from
         # root). Each package's tests run from inside that package.
         working-directory: packages/sdk
+        run: bun test
+      - name: Run react tests
+        working-directory: packages/react
         run: bun test
       - name: Run web tests
         working-directory: apps/web
