@@ -41,6 +41,41 @@ export interface AuthorizationFailure {
 
 export type AuthorizationResult = AuthorizationSuccess | AuthorizationFailure;
 
+// Shared by authorizeProjectAccess/authorizeApplicationAccess/
+// authorizeEnvironmentAccess below — the exact "resolve membership by
+// organization, then check role" tail all three used to duplicate
+// (code review finding 9: three near-identical copies, independently
+// flagged by two separate review passes — a real drift risk in a
+// security-sensitive path). Deliberately *not* used by
+// authorizeOrganizationAccess further down: that one's missing-
+// membership case is a real 403 (the organizationId came from the
+// principal's own request, no cross-tenant existence probe to guard
+// by pretending it doesn't exist), not the "404 either way" ambiguity
+// every entity-scoped check here needs.
+function checkMembershipAndRole(
+	principal: AuthenticatedPrincipal,
+	organizationId: string,
+	minRole: MembershipRole,
+	notFoundMessage: string,
+): AuthorizationResult {
+	const membership = principal.memberships.find(
+		(m) => m.organizationId === organizationId,
+	);
+	if (!membership) {
+		return { ok: false, status: 404, error: notFoundMessage };
+	}
+
+	if (!hasSufficientRole(membership.role, minRole)) {
+		return {
+			ok: false,
+			status: 403,
+			error: `requires ${minRole} access or higher`,
+		};
+	}
+
+	return { ok: true, organizationId, role: membership.role };
+}
+
 // security-architecture.md §6: "authorization resolves principal ->
 // organization membership -> application/environment/project scope ->
 // requested action." One shared function every project-scoped route
@@ -70,26 +105,12 @@ export async function authorizeProjectAccess(
 		return { ok: false, status: 404, error: "project not found" };
 	}
 
-	const membership = principal.memberships.find(
-		(m) => m.organizationId === project.organizationId,
+	return checkMembershipAndRole(
+		principal,
+		project.organizationId,
+		minRole,
+		"project not found",
 	);
-	if (!membership) {
-		return { ok: false, status: 404, error: "project not found" };
-	}
-
-	if (!hasSufficientRole(membership.role, minRole)) {
-		return {
-			ok: false,
-			status: 403,
-			error: `requires ${minRole} access or higher`,
-		};
-	}
-
-	return {
-		ok: true,
-		organizationId: project.organizationId,
-		role: membership.role,
-	};
 }
 
 // Same shape as authorizeProjectAccess, one level up the hierarchy
@@ -97,11 +118,17 @@ export async function authorizeProjectAccess(
 // Project) — routes/applications.ts's read/update routes and
 // routes/environments.ts's create route (which needs to confirm the
 // *application* it's attaching a new environment to is one the
-// principal can act in) both need this.
+// principal can act in) both need this. authorizeEnvironmentAccess
+// below also delegates to this directly (via notFoundMessage) rather
+// than duplicating the same application-resolution logic a second
+// time — this file used to carry a private
+// authorizeApplicationAccessWithFallback that was byte-for-byte this
+// function's body except for that one parameter.
 export async function authorizeApplicationAccess(
 	principal: AuthenticatedPrincipal | null,
 	applicationId: string,
 	minRole: MembershipRole,
+	notFoundMessage = "application not found",
 ): Promise<AuthorizationResult> {
 	if (!principal) {
 		return { ok: false, status: 401, error: "not authenticated" };
@@ -109,34 +136,22 @@ export async function authorizeApplicationAccess(
 
 	const application = await getApplication(applicationId);
 	if (!application) {
-		return { ok: false, status: 404, error: "application not found" };
+		return { ok: false, status: 404, error: notFoundMessage };
 	}
 
-	const membership = principal.memberships.find(
-		(m) => m.organizationId === application.organizationId,
+	return checkMembershipAndRole(
+		principal,
+		application.organizationId,
+		minRole,
+		notFoundMessage,
 	);
-	if (!membership) {
-		return { ok: false, status: 404, error: "application not found" };
-	}
-
-	if (!hasSufficientRole(membership.role, minRole)) {
-		return {
-			ok: false,
-			status: 403,
-			error: `requires ${minRole} access or higher`,
-		};
-	}
-
-	return {
-		ok: true,
-		organizationId: application.organizationId,
-		role: membership.role,
-	};
 }
 
 // Same shape again, one more level down — environments.ts's read
 // route. Resolves environment -> application -> organization, the
-// full chain, not just the immediate parent.
+// full chain, not just the immediate parent. The custom notFoundMessage
+// on the delegated call keeps a missing/inaccessible *environment*
+// from leaking the word "application" in its error body.
 export async function authorizeEnvironmentAccess(
 	principal: AuthenticatedPrincipal | null,
 	environmentId: string,
@@ -151,49 +166,12 @@ export async function authorizeEnvironmentAccess(
 		return { ok: false, status: 404, error: "environment not found" };
 	}
 
-	return authorizeApplicationAccessWithFallback(
+	return authorizeApplicationAccess(
 		principal,
 		environment.applicationId,
 		minRole,
 		"environment not found",
 	);
-}
-
-// Shared by authorizeEnvironmentAccess above — same application-
-// resolution logic authorizeApplicationAccess already has, but with a
-// caller-supplied "not found" message so a missing/inaccessible
-// *environment* doesn't leak the word "application" in its error body.
-async function authorizeApplicationAccessWithFallback(
-	principal: AuthenticatedPrincipal,
-	applicationId: string,
-	minRole: MembershipRole,
-	notFoundMessage: string,
-): Promise<AuthorizationResult> {
-	const application = await getApplication(applicationId);
-	if (!application) {
-		return { ok: false, status: 404, error: notFoundMessage };
-	}
-
-	const membership = principal.memberships.find(
-		(m) => m.organizationId === application.organizationId,
-	);
-	if (!membership) {
-		return { ok: false, status: 404, error: notFoundMessage };
-	}
-
-	if (!hasSufficientRole(membership.role, minRole)) {
-		return {
-			ok: false,
-			status: 403,
-			error: `requires ${minRole} access or higher`,
-		};
-	}
-
-	return {
-		ok: true,
-		organizationId: application.organizationId,
-		role: membership.role,
-	};
 }
 
 // For routes with no existing project to check against yet — creating
