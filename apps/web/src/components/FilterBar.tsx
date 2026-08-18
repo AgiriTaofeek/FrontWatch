@@ -86,3 +86,13 @@ export const DEFAULT_FILTER_BAR_VALUE: FilterBarValue = {
 	preset: "all",
 	release: "",
 };
+
+// A zero-result empty state needs to say something different depending
+// on whether a filter is actually narrowing the results (code review
+// finding 7: a deleted comment on the list components had explicitly
+// flagged "no data ever" vs. "no data for the current filter" as a
+// distinction still owed once filter UI existed — it now does, so this
+// closes that gap rather than leaving it deferred a second time).
+export function isFilterActive(value: FilterBarValue): boolean {
+	return value.preset !== "all" || value.release !== "";
+}

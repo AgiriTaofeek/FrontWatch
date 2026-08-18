@@ -4,6 +4,7 @@ import {
 	DEFAULT_FILTER_BAR_VALUE,
 	FilterBar,
 	type FilterBarValue,
+	isFilterActive,
 } from "../../components/FilterBar";
 import { networkResourcesQueryOptions } from "./api";
 
@@ -22,7 +23,11 @@ export function NetworkList({ projectId }: { projectId: string }) {
 		<div>
 			<FilterBar value={filters} onChange={setFilters} />
 			{data.resources.length === 0 ? (
-				<p>No network requests recorded for this project.</p>
+				<p>
+					{isFilterActive(filters)
+						? "No network requests match the selected filters."
+						: "No network requests recorded for this project."}
+				</p>
 			) : (
 				<table>
 					<thead>

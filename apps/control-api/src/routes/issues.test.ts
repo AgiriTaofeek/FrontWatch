@@ -100,6 +100,21 @@ describe("GET /projects/:projectId/issues", () => {
 		expect(response.status).toBe(422);
 	});
 
+	it("rejects a malformed from with a clean 422, instead of silently ignoring the filter", async () => {
+		// Regression test (code review finding 8): parseClickHouseTimeRangeQuery
+		// used to silently drop an unparseable from/to and return an
+		// unfiltered result — a stale bookmark or hand-crafted URL with a
+		// bad date would 200 with the filter quietly discarded instead of
+		// telling the caller their request was malformed.
+		const response = await issuesRoutes.handle(
+			new Request(
+				`http://localhost/projects/${projectId}/issues?from=not-a-real-date`,
+				{ headers: { Cookie: principal.cookie } },
+			),
+		);
+		expect(response.status).toBe(422);
+	});
+
 	it("returns 401 without a session", async () => {
 		const response = await issuesRoutes.handle(
 			new Request(`http://localhost/projects/${projectId}/issues`),

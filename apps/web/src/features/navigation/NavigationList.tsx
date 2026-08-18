@@ -4,6 +4,7 @@ import {
 	DEFAULT_FILTER_BAR_VALUE,
 	FilterBar,
 	type FilterBarValue,
+	isFilterActive,
 } from "../../components/FilterBar";
 import { navigationTransitionsQueryOptions } from "./api";
 
@@ -22,7 +23,11 @@ export function NavigationList({ projectId }: { projectId: string }) {
 		<div>
 			<FilterBar value={filters} onChange={setFilters} />
 			{data.transitions.length === 0 ? (
-				<p>No navigation events recorded for this project.</p>
+				<p>
+					{isFilterActive(filters)
+						? "No navigation events match the selected filters."
+						: "No navigation events recorded for this project."}
+				</p>
 			) : (
 				<table>
 					<thead>

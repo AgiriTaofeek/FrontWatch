@@ -5,6 +5,7 @@ import {
 	DEFAULT_FILTER_BAR_VALUE,
 	FilterBar,
 	type FilterBarValue,
+	isFilterActive,
 } from "../../components/FilterBar";
 import { performanceMetricsQueryOptions } from "./api";
 
@@ -23,7 +24,11 @@ export function PerformanceList({ projectId }: { projectId: string }) {
 		<div>
 			<FilterBar value={filters} onChange={setFilters} />
 			{data.metrics.length === 0 ? (
-				<p>No performance metrics recorded for this project.</p>
+				<p>
+					{isFilterActive(filters)
+						? "No performance metrics match the selected filters."
+						: "No performance metrics recorded for this project."}
+				</p>
 			) : (
 				<table>
 					<thead>

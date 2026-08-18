@@ -5,6 +5,7 @@ import {
 	DEFAULT_FILTER_BAR_VALUE,
 	FilterBar,
 	type FilterBarValue,
+	isFilterActive,
 } from "../../components/FilterBar";
 import { sessionsQueryOptions } from "./api";
 
@@ -22,7 +23,11 @@ export function SessionList({ projectId }: { projectId: string }) {
 				showReleaseFilter={false}
 			/>
 			{data.sessions.length === 0 ? (
-				<p>No sessions recorded for this project.</p>
+				<p>
+					{isFilterActive(filters)
+						? "No sessions match the selected filters."
+						: "No sessions recorded for this project."}
+				</p>
 			) : (
 				<table>
 					<thead>
